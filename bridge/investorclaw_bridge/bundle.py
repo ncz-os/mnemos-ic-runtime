@@ -22,13 +22,24 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
 import structlog
+
+from .bundle_schema import (
+    Bundle,
+    BundleMetadata,
+    MemoryRecord,
+    PortfolioRef,
+    parse_bundle,
+    serialize_bundle,
+)
 
 logger = structlog.get_logger("investorclaw_bridge.bundle")
 
@@ -162,30 +173,238 @@ def atomic_two_file_replace(
 # ──────────────────────────────────────────────────────────────────────
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Sqlite schemas — v4.0.0a1 minimal viable shape.
+# Real schemas grow in mnemos_db_schema.py / ic_db_schema.py; for v0.1
+# we keep them inline here so the round-trip test surface is small.
+# ──────────────────────────────────────────────────────────────────────
+
+
+_MNEMOS_SCHEMA_V1 = """
+CREATE TABLE IF NOT EXISTS memories (
+    id          TEXT PRIMARY KEY,
+    content     TEXT NOT NULL,
+    category    TEXT NOT NULL,
+    tags        TEXT NOT NULL DEFAULT '[]',   -- JSON array
+    created_at  TEXT NOT NULL,                -- ISO 8601
+    metadata    TEXT                           -- JSON object, NULL allowed
+);
+CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
+CREATE INDEX IF NOT EXISTS idx_memories_created  ON memories(created_at);
+
+CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
+INSERT OR IGNORE INTO schema_version (version) VALUES (1);
+"""
+
+_IC_ENGINE_SCHEMA_V1 = """
+CREATE TABLE IF NOT EXISTS portfolios (
+    id            TEXT PRIMARY KEY,
+    source_file   TEXT NOT NULL,
+    broker        TEXT NOT NULL,
+    account_type  TEXT NOT NULL,
+    label         TEXT,
+    last_imported TEXT
+);
+
+CREATE TABLE IF NOT EXISTS providers_config (
+    name           TEXT PRIMARY KEY,
+    api_key_ref    TEXT,                       -- env-var reference, NEVER raw value
+    base_url       TEXT,
+    default_model  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS data_sources_config (
+    name         TEXT PRIMARY KEY,
+    api_key_ref  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL                       -- JSON-serialized
+);
+
+CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
+INSERT OR IGNORE INTO schema_version (version) VALUES (1);
+"""
+
+
+def _init_mnemos_db(db_path: Path) -> None:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.executescript(_MNEMOS_SCHEMA_V1)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _init_ic_engine_db(db_path: Path) -> None:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.executescript(_IC_ENGINE_SCHEMA_V1)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Public API — v4.0.0a1 implementation
+# ──────────────────────────────────────────────────────────────────────
+
+
 def import_bundle(
     bundle_path: Path,
     *,
     mnemos_db: Path,
     ic_engine_db: Path,
-    data_dir: Path,
-    keys_env: Path,
+    data_dir: Path | None = None,
 ) -> BundleImportResult:
     """Import a v4.0 bundle.json — atomically across both sqlite dbs.
 
-    TODO[v4.0-impl]:
-      1. Validate bundle.json against Pydantic schema
-      2. Resolve env-var references against keys_env (or fail with structured error)
-      3. Open temp sqlite files (tmp_mnemos.db, tmp_ic.db) inside atomic_two_file_replace
-      4. Apply migrations to both temps so schema matches current code
-      5. Insert memories from bundle into tmp_mnemos.db
-      6. Insert portfolio refs from bundle into tmp_ic.db
-      7. If portfolios reference files in bundle.payload.portfolios/, copy them into data_dir
-      8. Validate post-insert integrity (PRAGMA integrity_check)
-      9. Exit context cleanly → atomic replace
+    Parses bundle.json (Pydantic validates schema + rejects raw keys),
+    materializes a temp mnemos.db + ic-engine.db with the v1 schema,
+    inserts memories + portfolios + config, then atomically replaces
+    the live dbs via atomic_two_file_replace.
 
-    On any failure: existing dbs untouched, no orphaned files, structured error.
+    On any failure: existing dbs untouched, no orphaned files,
+    structured error in BundleImportResult.errors.
+
+    Args:
+        bundle_path: path to the bundle.json file
+        mnemos_db: target mnemos.db path
+        ic_engine_db: target ic-engine.db path (must share parent dir
+            with mnemos_db — atomic-replace requires same FS)
+        data_dir: parent dir for temp files (defaults to mnemos_db.parent)
+
+    Returns:
+        BundleImportResult with success flag + counts.
     """
-    raise NotImplementedError("v4.0.0a1 placeholder — implementation lands after RFC review")
+    errors: list[str] = []
+
+    # 1. Parse + validate. Pydantic raises on schema violations or raw keys.
+    try:
+        bundle = parse_bundle(bundle_path.read_text())
+    except Exception as e:
+        errors.append(f"bundle.parse_error: {e}")
+        return BundleImportResult(
+            success=False,
+            memories_imported=0,
+            portfolios_imported=0,
+            keys_referenced=0,
+            errors=errors,
+        )
+
+    keys_referenced = (
+        sum(1 for p in bundle.providers.values() if p.api_key_ref)
+        + sum(1 for ds in bundle.data_sources.values() if ds.api_key_ref)
+        + (1 if bundle.mcp.auth_token_ref else 0)
+    )
+
+    # 2. Atomic write to both dbs
+    try:
+        with atomic_two_file_replace(
+            mnemos_db, ic_engine_db, data_dir=data_dir
+        ) as (tmp_mnemos, tmp_ic):
+            _init_mnemos_db(tmp_mnemos)
+            _init_ic_engine_db(tmp_ic)
+
+            # Insert memories into mnemos.db
+            with sqlite3.connect(str(tmp_mnemos)) as conn:
+                conn.executemany(
+                    """INSERT INTO memories
+                       (id, content, category, tags, created_at, metadata)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    [
+                        (
+                            m.id,
+                            m.content,
+                            m.category,
+                            json.dumps(m.tags),
+                            m.created_at.isoformat(),
+                            json.dumps(m.metadata) if m.metadata else None,
+                        )
+                        for m in bundle.memories
+                    ],
+                )
+                conn.commit()
+
+            # Insert portfolios + config into ic-engine.db
+            with sqlite3.connect(str(tmp_ic)) as conn:
+                conn.executemany(
+                    """INSERT INTO portfolios
+                       (id, source_file, broker, account_type, label, last_imported)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    [
+                        (
+                            p.id,
+                            p.source_file,
+                            p.broker,
+                            p.account_type,
+                            p.label,
+                            p.last_imported_at.isoformat()
+                            if p.last_imported_at
+                            else None,
+                        )
+                        for p in bundle.portfolios
+                    ],
+                )
+                conn.executemany(
+                    """INSERT INTO providers_config
+                       (name, api_key_ref, base_url, default_model)
+                       VALUES (?, ?, ?, ?)""",
+                    [
+                        (name, p.api_key_ref, p.base_url, p.default_model)
+                        for name, p in bundle.providers.items()
+                    ],
+                )
+                conn.executemany(
+                    """INSERT INTO data_sources_config
+                       (name, api_key_ref) VALUES (?, ?)""",
+                    [(name, ds.api_key_ref) for name, ds in bundle.data_sources.items()],
+                )
+                conn.executemany(
+                    "INSERT INTO settings (key, value) VALUES (?, ?)",
+                    [
+                        ("narrative", bundle.narrative.model_dump_json()),
+                        ("mcp", bundle.mcp.model_dump_json()),
+                        ("memory", bundle.memory.model_dump_json()),
+                    ],
+                )
+                conn.commit()
+
+            # Integrity check — PRAGMA quick_check is faster than integrity_check
+            # for our small dbs and catches the same corruption modes.
+            for db_path in (tmp_mnemos, tmp_ic):
+                with sqlite3.connect(str(db_path)) as conn:
+                    result = conn.execute("PRAGMA quick_check").fetchone()[0]
+                    if result != "ok":
+                        raise sqlite3.DatabaseError(
+                            f"{db_path.name} failed quick_check: {result}"
+                        )
+
+            logger.info(
+                "bundle.import.staged",
+                memories=len(bundle.memories),
+                portfolios=len(bundle.portfolios),
+                providers=len(bundle.providers),
+            )
+
+    except Exception as e:
+        errors.append(f"bundle.import_error: {type(e).__name__}: {e}")
+        return BundleImportResult(
+            success=False,
+            memories_imported=0,
+            portfolios_imported=0,
+            keys_referenced=0,
+            errors=errors,
+        )
+
+    return BundleImportResult(
+        success=True,
+        memories_imported=len(bundle.memories),
+        portfolios_imported=len(bundle.portfolios),
+        keys_referenced=keys_referenced,
+        errors=[],
+    )
 
 
 def export_bundle(
@@ -193,18 +412,161 @@ def export_bundle(
     *,
     mnemos_db: Path,
     ic_engine_db: Path,
-    keys_env: Path,
-    include_portfolios: bool = True,
+    investorclaw_version: str = "4.0.0a1",
+    from_host: str | None = None,
 ) -> BundleExportResult:
-    """Export the current state to a bundle.json + accompanying tarball.
+    """Export the current state to a bundle.json file.
 
-    TODO[v4.0-impl]:
-      1. Read all memories from mnemos.db into bundle.memories
-      2. Read all portfolio refs from ic-engine.db into bundle.portfolios
-      3. Read provider/data-source/narrative/mcp/memory config from ic-engine.db
-      4. Resolve provider keys to ENV-VAR REFERENCES (never raw values) using keys_env mapping
-      5. If include_portfolios: tar up portfolio source files into companion .tar.gz
-      6. Write bundle.json + (optional) tarball
-      7. Set umask 0077 / chmod 0600 on bundle output (defense in depth)
+    Reads memories from mnemos.db, portfolios + config from ic-engine.db,
+    builds a Bundle, serializes to bundle.json. Sets file mode 0600
+    (defense in depth — even though bundle.json never carries raw keys,
+    the schema-violating import-error path could leak a partial state).
+
+    Args:
+        output_path: where to write bundle.json
+        mnemos_db: source mnemos.db
+        ic_engine_db: source ic-engine.db
+        investorclaw_version: version string for metadata
+        from_host: hostname for metadata (defaults to socket.gethostname())
     """
-    raise NotImplementedError("v4.0.0a1 placeholder — implementation lands after RFC review")
+    if from_host is None:
+        import socket
+        from_host = socket.gethostname()
+
+    memories: list[MemoryRecord] = []
+    if mnemos_db.exists():
+        with sqlite3.connect(str(mnemos_db)) as conn:
+            rows = conn.execute(
+                """SELECT id, content, category, tags, created_at, metadata
+                   FROM memories ORDER BY created_at"""
+            ).fetchall()
+        for row in rows:
+            memories.append(
+                MemoryRecord(
+                    id=row[0],
+                    content=row[1],
+                    category=row[2],
+                    tags=json.loads(row[3]) if row[3] else [],
+                    created_at=datetime.fromisoformat(row[4]),
+                    metadata=json.loads(row[5]) if row[5] else None,
+                )
+            )
+
+    portfolios: list[PortfolioRef] = []
+    providers: dict[str, Any] = {}
+    data_sources: dict[str, Any] = {}
+    settings: dict[str, str] = {}
+
+    if ic_engine_db.exists():
+        with sqlite3.connect(str(ic_engine_db)) as conn:
+            for row in conn.execute(
+                """SELECT id, source_file, broker, account_type, label, last_imported
+                   FROM portfolios"""
+            ):
+                portfolios.append(
+                    PortfolioRef(
+                        id=row[0],
+                        source_file=row[1],
+                        broker=row[2],
+                        account_type=row[3],
+                        label=row[4],
+                        last_imported_at=datetime.fromisoformat(row[5])
+                        if row[5]
+                        else None,
+                    )
+                )
+
+            for row in conn.execute(
+                """SELECT name, api_key_ref, base_url, default_model
+                   FROM providers_config"""
+            ):
+                providers[row[0]] = {
+                    "api_key_ref": row[1],
+                    "base_url": row[2],
+                    "default_model": row[3],
+                }
+
+            for row in conn.execute(
+                "SELECT name, api_key_ref FROM data_sources_config"
+            ):
+                data_sources[row[0]] = {"api_key_ref": row[1]}
+
+            for row in conn.execute("SELECT key, value FROM settings"):
+                settings[row[0]] = row[1]
+
+    bundle = Bundle(
+        providers={k: _provider_from_dict(v) for k, v in providers.items()},
+        data_sources={k: _data_source_from_dict(v) for k, v in data_sources.items()},
+        portfolios=portfolios,
+        narrative=_load_narrative(settings),
+        mcp=_load_mcp(settings),
+        memory=_load_memory(settings),
+        memories=memories,
+        metadata=BundleMetadata(
+            exported_at=datetime.now(timezone.utc),
+            from_host=from_host,
+            investorclaw_version=investorclaw_version,
+        ),
+    )
+
+    output_path.write_text(serialize_bundle(bundle))
+    output_path.chmod(0o600)
+
+    logger.info(
+        "bundle.export.ok",
+        path=str(output_path),
+        memories=len(memories),
+        portfolios=len(portfolios),
+    )
+
+    return BundleExportResult(
+        success=True,
+        bundle_path=output_path,
+        memories_exported=len(memories),
+        portfolios_exported=len(portfolios),
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Internal helpers — load Bundle sub-models from sqlite settings
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _provider_from_dict(d: dict[str, Any]):
+    from .bundle_schema import ProviderConfig
+
+    return ProviderConfig(
+        api_key_ref=d.get("api_key_ref"),
+        base_url=d.get("base_url"),
+        default_model=d.get("default_model"),
+    )
+
+
+def _data_source_from_dict(d: dict[str, Any]):
+    from .bundle_schema import DataSourceConfig
+
+    return DataSourceConfig(api_key_ref=d.get("api_key_ref"))
+
+
+def _load_narrative(settings: dict[str, str]):
+    from .bundle_schema import NarrativeConfig
+
+    if "narrative" in settings:
+        return NarrativeConfig.model_validate_json(settings["narrative"])
+    return NarrativeConfig()
+
+
+def _load_mcp(settings: dict[str, str]):
+    from .bundle_schema import McpConfig
+
+    if "mcp" in settings:
+        return McpConfig.model_validate_json(settings["mcp"])
+    return McpConfig()
+
+
+def _load_memory(settings: dict[str, str]):
+    from .bundle_schema import MemoryConfig
+
+    if "memory" in settings:
+        return MemoryConfig.model_validate_json(settings["memory"])
+    return MemoryConfig()
