@@ -93,15 +93,48 @@ async def _run_ic_engine(
         stderr=asyncio.subprocess.PIPE,
         cwd=str(PORTFOLIO_DIR.parent),
     )
+    # Bug fix (2026-05-01): if the FastMCP request handler is cancelled mid-call
+    # (e.g., the agent's HTTP client times out and aborts), `proc.communicate()`
+    # raises CancelledError and the subprocess is orphaned, holding yfinance/FRED
+    # connections + file handles in /data/reports/. Subsequent calls then queue
+    # behind the orphans and time out themselves, cascading. Wrap in try/finally
+    # that always reaps the subprocess on any exit path. Discovered during
+    # 2026-05-01 v4.0 cobol barrage: 3 passes / 43 trials before this fix.
+    timed_out = False
     try:
-        stdout_b, stderr_b = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout_sec
-        )
-    except asyncio.TimeoutError:
-        proc.kill()
-        raise IcEngineError(
-            f"ic-engine command timed out after {timeout_sec}s: {full_cmd}"
-        )
+        try:
+            stdout_b, stderr_b = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout_sec
+            )
+        except asyncio.TimeoutError:
+            timed_out = True
+            raise IcEngineError(
+                f"ic-engine command timed out after {timeout_sec}s: {full_cmd}"
+            )
+    except (asyncio.CancelledError, asyncio.TimeoutError, IcEngineError):
+        # On timeout, on outer-task cancellation, or on any error: reap.
+        # SIGTERM first (gives engine a chance to clean up), then SIGKILL.
+        if proc.returncode is None:
+            try:
+                proc.terminate()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+            except ProcessLookupError:
+                pass
+        raise
+    finally:
+        # Belt-and-suspenders: catch the case where we returned successfully
+        # but the subprocess somehow didn't reap (shouldn't happen post-communicate
+        # but harmless if it does).
+        if proc.returncode is None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except ProcessLookupError:
+                pass
 
     stdout = stdout_b.decode("utf-8", errors="replace")
     stderr = stderr_b.decode("utf-8", errors="replace")
