@@ -92,7 +92,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-      start_period: 30s    # ic-engine first-start needs longer for sqlite init + uv venv ready
+      start_period: 30s    # ic-engine first-start needs longer for sqlite init
 
 volumes:
   investorclaw-data:

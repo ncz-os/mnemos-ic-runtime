@@ -19,10 +19,10 @@ runs it locally as two Docker containers via `docker compose up -d`;
 this Claude Code plugin is the thin client that registers the service's
 MCP servers with your agent and exposes two convenience slash commands.
 
-There is **no Python install on the agent side**, no `uv sync`, no
-virtualenv. The plugin is a manifest + this SKILL.md + a one-time
-config write that points Claude Code at two HTTP MCP endpoints on
-localhost. All analysis happens inside the user's Docker containers.
+The plugin is a manifest + this SKILL.md + a one-time config write
+that points Claude Code at two HTTP MCP endpoints on localhost. All
+analysis happens inside the user's Docker containers — the agent
+never installs or imports anything.
 
 This is the **v4.0 thin-client variant**. A separate listing
 ("InvestorClaude", v2.6.x) carries the older skill-bundle install path
@@ -150,7 +150,8 @@ See INSTALL.md for the full bring-up sequence.
 
 ## What this plugin does NOT do
 
-- Does not bundle Python, `uv`, npm, or any runtime
+- Does not install or execute any code on the agent side — it's a
+  manifest, this SKILL.md, and an MCP-server config write
 - Does not download or execute portfolio data on the agent side
 - Does not manage credentials (the engine reads broker CSVs the user
   drops in the dashboard)

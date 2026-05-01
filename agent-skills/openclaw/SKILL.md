@@ -119,7 +119,7 @@ v4.0 eliminates the v2.x openclaw install friction:
 
 - **No** `openclaw.plugin.json` manifest (there is no plugin)
 - **No** `dist/index.js` (there is no plugin shim to compile)
-- **No** `npm install` / `uv sync` step inside an openclaw container
+- **No** install step inside an openclaw container
 - **No** workspace bootstrap files (`BOOTSTRAP.md` / `IDENTITY.md` /
   `USER.md`) to seed
 - **No** schema-validation daemon to fight when writing provider config

@@ -18,8 +18,9 @@ Copyright 2026 InvestorClaw Contributors
 - **Claude Code** (current release). The plugin assumes the marketplace
   + MCP-server config conventions in effect at v4.0 release.
 
-No Python, `uv`, npm, or other runtime is needed on the agent side.
 The plugin is a manifest + a SKILL.md + an MCP-server config write.
+Nothing is installed on the agent side — analysis runs in the user's
+container, the agent just talks to it over MCP-HTTP.
 
 ## Install via the Claude Code marketplace
 
