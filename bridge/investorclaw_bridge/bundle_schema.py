@@ -232,9 +232,19 @@ class Bundle(BaseModel):
     narrative: NarrativeConfig = Field(default_factory=NarrativeConfig)
     mcp: McpConfig = Field(default_factory=McpConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
-    memories: list[MemoryRecord] = Field(
-        default_factory=list,
-        description="Mnemos memory records. May be empty if exporter chose to skip memories.",
+    # `memories` is Optional in v4.0.0a1 beta because mnemos-rs companion
+    # is deferred. Bundle imports without memories work; with-memories
+    # bundles are accepted and the memories block is held until mnemos
+    # connects (or skipped if mnemos is permanently absent). Per
+    # GRAEAE 2026-05-01: handle the absence in code, not docs — pilot
+    # imports failing on schema validation kill conversion rate.
+    memories: list[MemoryRecord] | None = Field(
+        default=None,
+        description=(
+            "Mnemos memory records. May be omitted entirely (v4.0.0a1 beta) "
+            "OR an empty list (mnemos connected, no memories yet) OR populated. "
+            "Handlers must accept all three states."
+        ),
     )
     metadata: BundleMetadata
 

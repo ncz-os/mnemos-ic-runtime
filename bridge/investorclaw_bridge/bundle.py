@@ -322,7 +322,7 @@ def import_bundle(
                             m.created_at.isoformat(),
                             json.dumps(m.metadata) if m.metadata else None,
                         )
-                        for m in bundle.memories
+                        for m in (bundle.memories or [])
                     ],
                 )
                 conn.commit()
@@ -383,7 +383,7 @@ def import_bundle(
 
             logger.info(
                 "bundle.import.staged",
-                memories=len(bundle.memories),
+                memories=len((bundle.memories or [])),
                 portfolios=len(bundle.portfolios),
                 providers=len(bundle.providers),
             )
@@ -400,7 +400,7 @@ def import_bundle(
 
     return BundleImportResult(
         success=True,
-        memories_imported=len(bundle.memories),
+        memories_imported=len((bundle.memories or [])),
         portfolios_imported=len(bundle.portfolios),
         keys_referenced=keys_referenced,
         errors=[],

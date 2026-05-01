@@ -25,42 +25,57 @@ The user is the orchestrator. The service is the substrate. Your agent
 runtime is the interface. **Your job: connect to the MCP servers, call
 the tools, interpret the structured results.**
 
-## Tool surface (after install)
+## Tool surface (v4.0.0a1 beta)
 
-When InvestorClaw is running, your tool catalog gains:
+> ⚠️ **v4.0.0a1 ships with 4 portfolio tools.** Additional tools land in
+> v4.0.0a2+. **Do not call** any tool name not in this list — they are
+> not wired yet, and calling them produces a tool-not-found error that
+> wastes the user's turn. **Route everything through `portfolio_ask`** —
+> it dispatches to the right analyzer behind the scenes and is the
+> stable surface for all portfolio questions.
 
-### Portfolio analysis (`investorclaw.*`)
+### Portfolio analysis (`investorclaw_*`)
 
-- `investorclaw.portfolio_ask` — natural-language portfolio question
-  routed through the deterministic engine
-- `investorclaw.portfolio_holdings` — current snapshot of positions /
-  values / weights
-- `investorclaw.portfolio_performance` — Sharpe, volatility, top/bottom
-  performers, max drawdown
-- `investorclaw.portfolio_bonds` — bond analytics (YTM, duration, FRED
-  yield curve)
-- `investorclaw.portfolio_analyst` — analyst ratings per holding
-- `investorclaw.portfolio_news` — news correlation for held positions
-- `investorclaw.portfolio_lookup` — ticker / account lookup
-- `investorclaw.portfolio_optimize` — Sharpe / min-vol optimization
-- `investorclaw.portfolio_rebalance` — current vs target with tax impact
-- `investorclaw.portfolio_scenario` — what-if scenarios on holdings
-- `investorclaw.portfolio_cashflow` — projected cashflow from bonds
-- `investorclaw.portfolio_peer` — peer comparison vs benchmark
-- `investorclaw.portfolio_setup` — auto-discover portfolio files in
-  `/data/portfolios/`
-- `investorclaw.portfolio_refresh` — refresh market data without
-  re-uploading files
-- `investorclaw.portfolio_guardrails` — view/configure educational-only
-  guardrails
+Beta-pilot tool surface — 4 tools, all snake_case (no dots, satisfies
+upstream OpenAI / MCP tool-name validation):
 
-### Memory (`mnemos.*`)
+- **`investorclaw_portfolio_ask`** — natural-language portfolio question
+  routed through the deterministic engine. **Use this for everything.**
+  The engine routes to the right internal analyzer (holdings,
+  performance, bonds, news, optimization, etc.) based on the question.
+- **`investorclaw_portfolio_holdings`** — current snapshot of positions /
+  values / weights / account hierarchy.
+- **`investorclaw_portfolio_refresh`** — re-fetch market data without
+  re-uploading portfolio files. Pulls fresh prices via yfinance / FRED /
+  Finnhub (depending on which keys are configured).
+- **`investorclaw_portfolio_setup`** — auto-discover portfolio files in
+  `/data/portfolios/`. Use on first run, or after the user uploads a new
+  portfolio file via the dashboard.
 
-- `mnemos.search_memories` — full-text + semantic search across
-  remembered observations
-- `mnemos.create_memory` — record an observation about the user's
-  preferences, prior questions, or current investing context
-- `mnemos.list_memories` — browse by category / date
+### NOT in v4.0.0a1 — defer to portfolio_ask
+
+The following capabilities ARE in the deterministic engine, but are
+NOT exposed as separate tools yet — `portfolio_ask` is the access path:
+
+- Performance analytics (Sharpe, volatility, drawdown) — ask "how is
+  my portfolio performing?"
+- Bond analytics (YTM, duration, FRED yield curve) — ask "what does
+  my bond portfolio look like?"
+- News correlation — ask "what's in the news about my holdings?"
+- Optimization (Sharpe, min-vol) — ask "what's an optimized weighting?"
+- Analyst ratings, peer comparison, scenarios, cashflow, lookup,
+  guardrails — all routable via `portfolio_ask`.
+
+Specific tool wrappers for these will land in v4.0.0a2 once the beta
+pilot signal validates the architecture.
+
+### Memory (deferred for beta)
+
+The mnemos-rs companion container is **not shipped in v4.0.0a1 beta**.
+Memory tools (`mnemos.search_memories`, `mnemos.create_memory`,
+`mnemos.list_memories`) will appear once the mnemos-rs sibling container
+lands in v4.0.0a2+. For beta: portfolio analysis is stateless across
+turns; the agent's own conversation memory is the only persistence.
 
 ## How to use it
 

@@ -112,11 +112,16 @@ def main() -> int:
     async def version() -> JSONResponse:
         return JSONResponse({"version": "4.0.0a1", "service": "investorclaw-bridge"})
 
-    # Mount static dashboard files at /
+    # Wire the first-run setup API + bare-metal HTML form
+    # (per GRAEAE 2026-05-01 — keep pilots in browser, out of nano)
+    from . import setup_api
+    setup_api.attach_to(dashboard_app)
+
+    # Mount static dashboard files at /static (root is taken by setup redirect)
     dashboard_dir = "/opt/ic-engine/dashboard"
     if os.path.isdir(dashboard_dir):
         dashboard_app.mount(
-            "/", StaticFiles(directory=dashboard_dir, html=True), name="dashboard"
+            "/static", StaticFiles(directory=dashboard_dir, html=True), name="dashboard"
         )
 
     # ── Build the MCP-HTTP app ────────────────────────────────────────
