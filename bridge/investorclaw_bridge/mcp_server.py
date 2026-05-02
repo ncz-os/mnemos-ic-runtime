@@ -337,6 +337,17 @@ def register_tools(app) -> None:
     )
 
 
+# Pydantic body model for the REST /api/portfolio/ask endpoint. Defined at
+# module scope (NOT closure-local inside register_rest_routes) so FastAPIs
+# Pydantic v2 type adapter can fully resolve the ForwardRef. A closure-local
+# class hits PydanticUserError: ... is not fully defined at first request.
+from pydantic import BaseModel as _BaseModel
+
+
+class AskBody(_BaseModel):
+    question: str
+
+
 def register_rest_routes(app: Any) -> None:
     """Register plain-HTTP REST wrappers for the 4 v4.0 tools on a FastAPI app.
 
@@ -355,10 +366,6 @@ def register_rest_routes(app: Any) -> None:
     just different transports for the same tool contract.
     """
     from fastapi import HTTPException, Body
-    from pydantic import BaseModel
-
-    class AskBody(BaseModel):
-        question: str
 
     @app.post("/api/portfolio/ask")
     async def rest_portfolio_ask(body: AskBody = Body(...)) -> dict[str, Any]:
