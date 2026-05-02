@@ -164,7 +164,34 @@ def main() -> int:
     from contextlib import asynccontextmanager
 
     if FastMCP is not None:
-        mcp_app = FastMCP("investorclaw")
+        # MCP server's StreamableHTTP transport ships DNS-rebinding protection
+        # (mcp.server.transport_security.TransportSecuritySettings, on by
+        # default). With allowed_hosts=[] and protection on, every Host header
+        # except 127.0.0.1/localhost is rejected. That breaks the v4.0
+        # container-to-container path: an agent in a sibling container hits the
+        # bridge over the docker bridge IP (172.17.0.1:18090 in default bridge
+        # mode, or `<service-name>:8090` in compose's user-defined bridge) and
+        # gets `Streamable HTTP error: Invalid Host header`.
+        #
+        # The convention (RFC §8) is localhost-only by default, but localhost
+        # is the *host*, not the *container*'s view of the host. For the
+        # in-cluster MCP path to work at all, we need to allow the container
+        # bridge IPs and compose service names.
+        #
+        # Default: disable rebinding protection (this service is meant to be
+        # reached by sibling containers + localhost; not exposed publicly).
+        # Override via env: MCP_ALLOWED_HOSTS=host1,host2,... to keep
+        # protection on with an explicit allowlist.
+        from mcp.server.transport_security import TransportSecuritySettings
+        _allowed_hosts = os.environ.get("MCP_ALLOWED_HOSTS", "").strip()
+        if _allowed_hosts:
+            _sec = TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=[h.strip() for h in _allowed_hosts.split(",") if h.strip()],
+            )
+        else:
+            _sec = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+        mcp_app = FastMCP("investorclaw", transport_security=_sec)
         mcp_server.register_tools(mcp_app)
         try:
             mcp_asgi = mcp_app.streamable_http_app()
