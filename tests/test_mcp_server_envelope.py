@@ -150,7 +150,16 @@ def test_health_check_reports_bin_status(fake_ic_bin: Path) -> None:
 
 
 def test_health_check_degraded_when_bin_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(mcp_server, "IC_ENGINE_BIN", "/nonexistent/path/investorclaw")
+    # Post-reorg (2026-05-02): IC_ENGINE_BIN lives in mcp._runtime; the
+    # mcp_server shim re-exports it but health_check() reads the canonical
+    # value from _runtime. Patch there so health_check sees the override.
+    # Also monkeypatch shutil.which because health_check falls back to a
+    # PATH-lookup of "investorclaw"; pytest under the ic-engine venv
+    # finds the binary on PATH, which would otherwise mask the degraded
+    # signal even when the explicit IC_ENGINE_BIN is missing.
+    from investorclaw_bridge.mcp import _runtime
+    monkeypatch.setattr(_runtime, "IC_ENGINE_BIN", "/nonexistent/path/investorclaw")
+    monkeypatch.setattr(_runtime.shutil, "which", lambda _: None)
     h = mcp_server.health_check()
     assert h["status"] == "degraded"
     assert h["ic_engine_bin_found"] is False
