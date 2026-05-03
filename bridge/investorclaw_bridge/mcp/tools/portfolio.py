@@ -36,8 +36,29 @@ async def portfolio_ask(question: str) -> dict[str, Any]:
     breaks the rate-limit cascade that previously made multi-prompt sessions
     hang. Earlier `--no-refresh` here suppressed routing entirely (engine
     fell through to the catalog blurb), so it is intentionally NOT passed.
+
+    Each successful response is auto-persisted to MNEMOS (best-effort) so
+    the user can search history, retrieve by serial number (run_id), flag
+    bad ones, and delete failures — see portfolio_response_* tools. The
+    persisted mem_id is attached to the response under `mnemos_mem_id`
+    when storage succeeds.
     """
-    return await _run_ic_engine(["ask", question])
+    result = await _run_ic_engine(["ask", question])
+    # Best-effort MNEMOS persistence; never raises, never blocks the response.
+    try:
+        from .responses import persist_response
+        stored = persist_response(
+            question=question,
+            narrative=result.get("narrative") or "",
+            ic_result=result.get("ic_result"),
+            duration_ms=None,
+        )
+        if stored and stored.get("id"):
+            result["mnemos_mem_id"] = stored["id"]
+    except Exception:
+        # MNEMOS optional — silent failure, response still goes back to caller.
+        pass
+    return result
 
 
 async def portfolio_holdings() -> dict[str, Any]:

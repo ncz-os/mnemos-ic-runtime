@@ -76,6 +76,26 @@ def register_tools(app: Any) -> None:
         """Delete a single configured API key by name."""
         return await TOOL_REGISTRY["portfolio_keys_delete"]["handler"](name)
 
+    @app.tool()
+    async def portfolio_response_get(run_id: str) -> dict[str, Any]:
+        """Retrieve a stored portfolio response by run_id (serial number)."""
+        return await TOOL_REGISTRY["portfolio_response_get"]["handler"](run_id)
+
+    @app.tool()
+    async def portfolio_response_list(limit: int = 10) -> dict[str, Any]:
+        """List recent stored portfolio responses."""
+        return await TOOL_REGISTRY["portfolio_response_list"]["handler"](limit)
+
+    @app.tool()
+    async def portfolio_response_delete(run_id: str) -> dict[str, Any]:
+        """Delete a stored portfolio response by run_id."""
+        return await TOOL_REGISTRY["portfolio_response_delete"]["handler"](run_id)
+
+    @app.tool()
+    async def portfolio_response_flag_bad(run_id: str, reason: str = "") -> dict[str, Any]:
+        """Flag a stored portfolio response as bad without deleting it."""
+        return await TOOL_REGISTRY["portfolio_response_flag_bad"]["handler"](run_id, reason)
+
     logger.info(
         "mcp.tools.registered",
         tools=list(TOOL_REGISTRY.keys()),
@@ -103,6 +123,27 @@ class KeysSetBody(_BaseModel):
 class KeysDeleteBody(_BaseModel):
     """Single-name delete body."""
     name: str
+
+
+class ResponseGetBody(_BaseModel):
+    """Lookup by run_id (serial number)."""
+    run_id: str
+
+
+class ResponseListBody(_BaseModel):
+    """List most-recent stored responses."""
+    limit: int = 10
+
+
+class ResponseDeleteBody(_BaseModel):
+    """Delete a stored response by run_id."""
+    run_id: str
+
+
+class ResponseFlagBadBody(_BaseModel):
+    """Flag a stored response as bad with optional reason note."""
+    run_id: str
+    reason: str = ""
 
 
 def register_rest_routes(app: Any) -> None:
@@ -165,6 +206,30 @@ def register_rest_routes(app: Any) -> None:
     @app.get("/api/portfolio/keys/status")
     async def rest_keys_status_alias() -> dict[str, Any]:
         return await TOOL_REGISTRY["portfolio_keys_status"]["handler"]()
+
+    # ──────────────────────────────────────────────────────────────────
+    # Stored-response CRUD (paths match tool names — see catalog)
+    # ──────────────────────────────────────────────────────────────────
+
+    @app.post("/api/portfolio/response_get")
+    async def rest_response_get(body: ResponseGetBody = Body(...)) -> dict[str, Any]:
+        """Retrieve a stored response by run_id (serial number)."""
+        return await TOOL_REGISTRY["portfolio_response_get"]["handler"](body.run_id)
+
+    @app.post("/api/portfolio/response_list")
+    async def rest_response_list(body: ResponseListBody = Body(...)) -> dict[str, Any]:
+        """List recent stored responses."""
+        return await TOOL_REGISTRY["portfolio_response_list"]["handler"](body.limit)
+
+    @app.post("/api/portfolio/response_delete")
+    async def rest_response_delete(body: ResponseDeleteBody = Body(...)) -> dict[str, Any]:
+        """Delete a stored response by run_id."""
+        return await TOOL_REGISTRY["portfolio_response_delete"]["handler"](body.run_id)
+
+    @app.post("/api/portfolio/response_flag_bad")
+    async def rest_response_flag_bad(body: ResponseFlagBadBody = Body(...)) -> dict[str, Any]:
+        """Flag a stored response as bad without deleting."""
+        return await TOOL_REGISTRY["portfolio_response_flag_bad"]["handler"](body.run_id, body.reason)
 
     @app.get("/api/portfolio/tools")
     async def rest_portfolio_tools() -> dict[str, Any]:
