@@ -27,17 +27,17 @@ from .._runtime import _run_ic_engine
 
 
 async def portfolio_ask(question: str) -> dict[str, Any]:
-    """Natural-language portfolio question. Routes through ic-engines
+    """Natural-language portfolio question. Routes through ic-engine's
     deterministic pipeline, returns the structured ic_result envelope
     plus narrative text body.
 
-    --no-refresh: use the cached envelope deterministically. The default
-    ic-engine ask path refreshes stale sections (news TTL=30s) on every call,
-    which hits external APIs and produces 60-300s variance per ask call within
-    a multi-prompt session. Callers who want fresh data should invoke
-    portfolio_refresh explicitly first.
+    The engine refreshes stale sections (news TTL=30s) opportunistically; the
+    cookie-cache-clear in `_runtime._clear_yfinance_cache` (commit 50387b1)
+    breaks the rate-limit cascade that previously made multi-prompt sessions
+    hang. Earlier `--no-refresh` here suppressed routing entirely (engine
+    fell through to the catalog blurb), so it is intentionally NOT passed.
     """
-    return await _run_ic_engine(["ask", "--no-refresh", question])
+    return await _run_ic_engine(["ask", question])
 
 
 async def portfolio_holdings() -> dict[str, Any]:
@@ -47,7 +47,7 @@ async def portfolio_holdings() -> dict[str, Any]:
     a more focused contract for callers that always want holdings data.
     """
     return await _run_ic_engine(
-        ["ask", "--no-refresh", "What is in my portfolio? Show me holdings, values, and weights."]
+        ["ask", "What is in my portfolio? Show me holdings, values, and weights."]
     )
 
 
@@ -56,9 +56,10 @@ async def portfolio_refresh() -> dict[str, Any]:
 
     Re-runs the ic-engine refresh pipeline against current portfolio files
     in /data/portfolios/. Pulls fresh prices via yfinance / FRED / Finnhub.
-    Tighter timeout (180s) since refresh is meant to be intentional.
+    Large portfolios (200+ positions) need ~3-5min on a cold yfinance cache,
+    so timeout matches the broader subprocess default (600s).
     """
-    return await _run_ic_engine(["refresh"], timeout_sec=180.0)
+    return await _run_ic_engine(["refresh"], timeout_sec=600.0)
 
 
 async def portfolio_setup() -> dict[str, Any]:

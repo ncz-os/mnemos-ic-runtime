@@ -61,6 +61,21 @@ def register_tools(app: Any) -> None:
         """Auto-discover portfolio files in /data/portfolios/."""
         return await TOOL_REGISTRY["portfolio_setup"]["handler"]()
 
+    @app.tool()
+    async def portfolio_keys_status() -> dict[str, Any]:
+        """Report which API keys are currently configured (names only)."""
+        return await TOOL_REGISTRY["portfolio_keys_status"]["handler"]()
+
+    @app.tool()
+    async def portfolio_keys_set(keys: dict[str, str]) -> dict[str, Any]:
+        """Set one or more API keys; persists to /data/keys.env (mode 0600)."""
+        return await TOOL_REGISTRY["portfolio_keys_set"]["handler"](keys)
+
+    @app.tool()
+    async def portfolio_keys_delete(name: str) -> dict[str, Any]:
+        """Delete a single configured API key by name."""
+        return await TOOL_REGISTRY["portfolio_keys_delete"]["handler"](name)
+
     logger.info(
         "mcp.tools.registered",
         tools=list(TOOL_REGISTRY.keys()),
@@ -78,6 +93,16 @@ def register_tools(app: Any) -> None:
 # PydanticUserError: '... is not fully defined' at first request.
 class AskBody(_BaseModel):
     question: str
+
+
+class KeysSetBody(_BaseModel):
+    """Bulk-set body. Names must be in the allowlist (see /api/portfolio/keys/status)."""
+    keys: dict[str, str]
+
+
+class KeysDeleteBody(_BaseModel):
+    """Single-name delete body."""
+    name: str
 
 
 def register_rest_routes(app: Any) -> None:
@@ -106,6 +131,40 @@ def register_rest_routes(app: Any) -> None:
     @app.post("/api/portfolio/setup")
     async def rest_portfolio_setup() -> dict[str, Any]:
         return await TOOL_REGISTRY["portfolio_setup"]["handler"]()
+
+    # Key management — paths match tool names exactly (`portfolio_keys_*`)
+    # so agents can derive URLs from the catalog's `path` field directly.
+    # POST for both status and set keeps the surface uniform with the
+    # other portfolio_* tools (some MCP-bridged HTTP clients only emit
+    # POST for tool-call style verbs).
+    @app.post("/api/portfolio/keys_status")
+    async def rest_keys_status() -> dict[str, Any]:
+        """Which API keys are configured (names only). Safe — never returns values."""
+        return await TOOL_REGISTRY["portfolio_keys_status"]["handler"]()
+
+    @app.post("/api/portfolio/keys_set")
+    async def rest_keys_set(body: KeysSetBody = Body(...)) -> dict[str, Any]:
+        """Set or delete API keys (allowlisted only).
+
+        Body shape: `{"keys": {"FINNHUB_KEY": "...", "TOGETHER_API_KEY": "..."}}`.
+        Empty value deletes the key. Names not in the allowlist are rejected
+        with a structured 200 response (NOT 400 — agents read the `rejected`
+        field). Bridge mirrors keys into os.environ live, so the next
+        portfolio_ask sees them without restart.
+        """
+        return await TOOL_REGISTRY["portfolio_keys_set"]["handler"](body.keys)
+
+    @app.post("/api/portfolio/keys_delete")
+    async def rest_keys_delete(body: KeysDeleteBody = Body(...)) -> dict[str, Any]:
+        """Delete a single configured key by name. Allowlisted names only."""
+        return await TOOL_REGISTRY["portfolio_keys_delete"]["handler"](body.name)
+
+    # Convenience: a GET alias on /api/portfolio/keys/status for browser/dev
+    # use. The canonical path remains /api/portfolio/keys_status to match
+    # the tool name and catalog discovery.
+    @app.get("/api/portfolio/keys/status")
+    async def rest_keys_status_alias() -> dict[str, Any]:
+        return await TOOL_REGISTRY["portfolio_keys_status"]["handler"]()
 
     @app.get("/api/portfolio/tools")
     async def rest_portfolio_tools() -> dict[str, Any]:

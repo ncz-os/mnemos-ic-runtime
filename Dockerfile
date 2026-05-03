@@ -168,22 +168,31 @@ RUN set -ex; \
 #                          still computable (numpy/scipy/cvxpy do the
 #                          math); only the inline chart rendering is lost.
 #                          The dashboard renders charts client-side anyway.
-#   litellm (61 MB)        Only used in ic_engine/rendering/stonkmode.py
-#                          for narrative synthesis. The bridge calls
-#                          Together AI / OpenAI / etc directly via httpx
-#                          on the rendering path, so litellm is dead in
-#                          v4.0. Drop it; if the engine's stonkmode
-#                          renderer needs it, the import will fail loud.
+#   litellm (61 MB)        REINSTATED 2026-05-03. Comment "only used by
+#                          stonkmode" was wrong: ic_engine/runtime/narrator.py
+#                          imports it for the user-facing narrative synthesis
+#                          path. Stripping it caused EVERY `ask` call to fall
+#                          through to the heuristic catalog blurb (silently
+#                          swallowed ImportError), which in turn caused
+#                          months of "30/30 PASS" to be a false positive on
+#                          a too-lenient verdict. NEVER strip litellm again
+#                          without first auditing every `from litellm` import
+#                          in the engine source — narrator wraps it in a
+#                          bare try/except and the bug is silent. See
+#                          MNEMOS feedback_v4_0_30_30_was_false_positive.md.
 RUN set -ex; \
     /usr/local/bin/python3 /build/bridge/patches/lazy_matplotlib_optimize.py \
         /build/.venv/lib/python3.12/site-packages; \
     PKGS=$(UV_PROJECT_ENVIRONMENT=/build/.venv uv pip list --python /build/.venv/bin/python --format=json \
-       | /usr/local/bin/python3 -c "import json, sys; orphans={'scikit-learn','cuda-bindings','cuda-pathfinder','cuda-toolkit','litellm','matplotlib','fonttools','contourpy','cycler','kiwisolver','pillow'}; print(' '.join(p['name'] for p in json.load(sys.stdin) if p['name'].lower() in orphans))"); \
+       | /usr/local/bin/python3 -c "import json, sys; orphans={'scikit-learn','cuda-bindings','cuda-pathfinder','cuda-toolkit','matplotlib','fonttools','contourpy','cycler','kiwisolver','pillow'}; print(' '.join(p['name'] for p in json.load(sys.stdin) if p['name'].lower() in orphans))"); \
     echo "stripping orphans + optional: $PKGS"; \
     UV_PROJECT_ENVIRONMENT=/build/.venv uv pip uninstall --python /build/.venv/bin/python $PKGS || true; \
+    echo "ensuring litellm IS installed (required by narrator)..."; \
+    UV_PROJECT_ENVIRONMENT=/build/.venv uv pip install --python /build/.venv/bin/python litellm; \
     echo "verifying ic-engine still importable..."; \
     /build/.venv/bin/python -c "import ic_engine.commands.optimize; print('optimize import ok (matplotlib lazy)')"; \
-    /build/.venv/bin/python -c "import ic_engine; print('ic_engine ok')"
+    /build/.venv/bin/python -c "import ic_engine; print('ic_engine ok')"; \
+    /build/.venv/bin/python -c "import litellm; print('litellm ok (narrator dep)')"
 
 # Pass 5 (post v4.0.1 trim): orphans-not-caught-earlier + tests/ directories.
 #

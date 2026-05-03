@@ -21,11 +21,17 @@ from .portfolio import (
     portfolio_refresh,
     portfolio_setup,
 )
+from .keys import (
+    KEYS_TOOLS,
+    portfolio_keys_status,
+    portfolio_keys_set,
+    portfolio_keys_delete,
+)
 
 # Single canonical registry across all domains. Add new domain modules by
 # importing their TOOLS dict and merging here.
 TOOL_REGISTRY: dict[str, dict[str, Any]] = {}
-for _domain in (PORTFOLIO_TOOLS,):
+for _domain in (PORTFOLIO_TOOLS, KEYS_TOOLS):
     TOOL_REGISTRY.update(_domain)
 
 # Alias for v5 mnemos parity
@@ -54,4 +60,7 @@ __all__ = [
     "portfolio_holdings",
     "portfolio_refresh",
     "portfolio_setup",
+    "portfolio_keys_status",
+    "portfolio_keys_set",
+    "portfolio_keys_delete",
 ]

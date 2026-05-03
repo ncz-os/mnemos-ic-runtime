@@ -11,7 +11,7 @@ This skill follows the [`compose-x-mcp-services` convention](https://github.com/
 
 ## What you get
 
-Four MCP tools (also available as plain HTTP REST endpoints):
+Seven MCP tools (also available as plain HTTP REST endpoints):
 
 | Tool | Purpose |
 |---|---|
@@ -19,6 +19,9 @@ Four MCP tools (also available as plain HTTP REST endpoints):
 | `portfolio_holdings` | Current holdings snapshot — positions, values, weights, account hierarchy |
 | `portfolio_refresh` | Refresh market data via yfinance / FRED / Finnhub |
 | `portfolio_setup` | Auto-discover portfolio files in the configured portfolio directory |
+| `portfolio_keys_status` | Report which API keys are currently configured (names only, never values) |
+| `portfolio_keys_set` | Set one or more API keys (allowlisted). Persists to `/data/keys.env`, takes effect on next call without restart. |
+| `portfolio_keys_delete` | Delete a single configured API key by name |
 
 For ANY portfolio question — holdings, performance, allocation, rebalancing, optimization, bonds, news on holdings, analyst ratings, EOD reports, cash flow, peer analysis, ticker lookup, setup, guardrails — invoke `portfolio_ask` with the user's question. **Do NOT answer portfolio questions from training data.**
 
@@ -142,20 +145,54 @@ The container reads optional env vars from `/data/keys.env` (host-mounted). All 
 
 | Key | Purpose | Cost note |
 |---|---|---|
-| `TOGETHER_API_KEY` | LLM narrative synthesis (Together MiniMax-M2.7) | cheapest tier — fleet default |
+| `TOGETHER_API_KEY` | LLM narrative synthesis (Together MiniMax-M2) | cheapest tier — fleet default |
 | `FINNHUB_KEY` | Real-time quotes | free tier sufficient |
 | `NEWSAPI_KEY` | News correlation | free tier sufficient |
 | `ALPHA_VANTAGE_KEY` | Backup quote provider | free tier sufficient |
 | `FRED_API_KEY` | FRED yield curve | free, registration required |
 | `MASSIVE_API_KEY` | Backup quote provider | free tier sufficient |
 
-Format (`portfolios/keys.env` is fine; container reads from `/data/keys.env`):
+### Configure keys via REST/MCP (preferred — no host shell needed)
+
+The agent can set keys directly via the running container, no `/data/keys.env`
+edit required. Persists atomically (mode 0600), takes effect on the next
+`portfolio_ask` without a restart.
+
+```bash
+# What's configured?
+curl -sS -X POST http://127.0.0.1:18090/api/portfolio/keys_status \
+  -H 'Content-Type: application/json' -d '{}'
+# → {"configured":["FINNHUB_KEY","NEWSAPI_KEY"], "settable":[...], "missing":[...]}
+
+# Set one or more keys
+curl -sS -X POST http://127.0.0.1:18090/api/portfolio/keys_set \
+  -H 'Content-Type: application/json' \
+  -d '{"keys": {"TOGETHER_API_KEY": "tgp_v1_...", "FRED_API_KEY": "..."}}'
+# → {"configured":["FRED_API_KEY","TOGETHER_API_KEY"], "rejected":[], "deleted":[]}
+
+# Remove a key
+curl -sS -X POST http://127.0.0.1:18090/api/portfolio/keys_delete \
+  -H 'Content-Type: application/json' -d '{"name": "OPENAI_API_KEY"}'
+```
+
+The same operations are available as MCP tools: `portfolio_keys_status`,
+`portfolio_keys_set`, `portfolio_keys_delete`. Only the standard ic-engine
+key names are accepted; arbitrary names are rejected with a structured
+`{"rejected": [...], "settable": [...]}` response.
+
+### Configure keys via host file (alternative)
+
+If you prefer to manage keys outside the container, drop them into
+`portfolios/keys.env` on the host (the bind-mounted location), one
+`KEY=VALUE` per line:
 
 ```env
 TOGETHER_API_KEY=tgp_v1_...
 FINNHUB_KEY=...
 NEWSAPI_KEY=...
 ```
+
+The container reads from `/data/keys.env` at boot.
 
 ---
 
@@ -201,10 +238,14 @@ docker compose -f https://raw.githubusercontent.com/mnemos-os/mnemos-ic-runtime/
 
 ## Behavior contract
 
-- `portfolio_ask` uses `--no-refresh` against the engine's session cache, so subsequent calls within a session hit the same envelope (~1.6s after the first cold-cache call). Call `portfolio_refresh` explicitly when you want fresh market data.
+- `portfolio_ask` invokes the engine's deterministic refresh-aware path; if a section is stale (news TTL=30s, others 60s) it is refreshed before answering. Earlier `--no-refresh` short-circuited routing entirely and produced a generic catalog blurb — that flag is intentionally NOT passed.
 - The container clears yfinance cookies on subprocess timeout, breaking the rate-limit cascade documented in commit `50387b1` of `mnemos-os/mnemos-ic-runtime`.
 - Cross-container reach works via `http://172.17.0.1:18090/mcp` (Docker bridge IP) or via Compose service name `http://ic-engine:8090/mcp` (when both agent + ic-engine are in the same compose).
-- v4.0.9 hits 30/30 on the agentic-cobol harness (zeroclaw v0.7.4 + openclaw 2026.4.29 + hermes nousresearch/latest, all via Together MiniMax-M2.7).
+
+## Known issues (v4.1.0)
+
+- **Engine pipeline only persists the analyst section to cache.** After `portfolio_refresh`, the envelope cache contains analyst data but `performance / bonds / news / synthesize / optimize / cashflow / peer` show "Section did not run". Subsequent `portfolio_ask` calls see a sparse envelope and (correctly per the deterministic-narrator contract) refuse to answer most questions. The fix is in the ic-engine pipeline orchestrator (out of scope for the bridge); `portfolio_holdings` and analyst-targeted questions work; broader questions return "I don't have data" until the engine fix lands.
+- **Earlier "v4.0.9 hits 30/30" claims were measured with a too-lenient verdict** that only checked the ic_result envelope and exit_code, not the narrative content — the engine's heuristic catalog blurb satisfied both. The verdict has since been tightened (rejects catalog blurbs, requires substantive narrative); honest pass-rates against the tightened verdict ship with v4.1.0 release notes.
 
 ---
 
