@@ -31,7 +31,18 @@ def main(site_packages: str) -> int:
         return 1
 
     src = target.read_text()
+    # Idempotent — newer engine sources (commit 616b7a2+) wrap the
+    # matplotlib import in try/except natively. Detect that and no-op
+    # silently rather than failing the build.
     if OLD not in src:
+        already_lazy = (
+            "except ImportError" in src
+            and "from matplotlib" in src
+            and "plt = None" in src
+        )
+        if already_lazy:
+            print(f"already lazy: {target} (no-op)")
+            return 0
         print(f"FAIL: {target}: did not find expected import line", file=sys.stderr)
         return 1
     target.write_text(src.replace(OLD, NEW))
