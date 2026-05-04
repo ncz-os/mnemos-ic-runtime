@@ -55,7 +55,7 @@
   "mcpServers": {
     "investorclaw": {
       "transport": "http",
-      "url": "http://127.0.0.1:8090/mcp",
+      "url": "http://127.0.0.1:18090/mcp",
       "// note": "Portfolio analysis tools. Service runs in user's Docker (mnemos-os/ic-engine:4.1.22-cpu)."
     },
     "mnemos": {
@@ -73,7 +73,7 @@
 
   "postInstall": {
     "// TODO: confirm postInstall field name and message-rendering convention": null,
-    "message": "InvestorClaw plugin installed. To finish setup, run:\n\n  mkdir -p ~/.investorclaw\n  curl -sSL https://raw.githubusercontent.com/mnemos-os/mnemos-ic-runtime/main/compose.yml > ~/.investorclaw/compose.yml\n  cd ~/.investorclaw && docker compose up -d\n\nThen open http://localhost:8092 to upload a portfolio. See INSTALL.md for full details."
+    "message": "InvestorClaw plugin installed. To finish setup, run:\n\n  mkdir -p ~/.investorclaw\n  curl -sSL https://raw.githubusercontent.com/mnemos-os/mnemos-ic-runtime/main/compose.yml > ~/.investorclaw/compose.yml\n  cd ~/.investorclaw && docker compose up -d\n\nThen open http://localhost:18092 to upload a portfolio. See INSTALL.md for full details."
   },
 
   "// poweredBy attribution surfaced on listing page": null,

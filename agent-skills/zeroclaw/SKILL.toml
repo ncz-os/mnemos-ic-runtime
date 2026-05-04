@@ -35,7 +35,7 @@ docker = true
 [[skill.requires.mcp_servers]]
 name = "investorclaw"
 transport = "http"
-default_url = "http://127.0.0.1:8090/mcp"
+default_url = "http://127.0.0.1:18090/mcp"
 purpose = "Portfolio analysis (holdings, performance, bonds, optimization, scenarios)."
 
 [[skill.requires.mcp_servers]]

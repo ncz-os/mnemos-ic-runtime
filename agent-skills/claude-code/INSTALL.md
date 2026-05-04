@@ -61,7 +61,7 @@ Both should return 200.
 
 ## Upload a portfolio
 
-Open the dashboard at **http://localhost:8092** in your browser. Drop
+Open the dashboard at **http://localhost:18092** in your browser. Drop
 in a broker CSV / XLS / XLSX / PDF. The dashboard handles column
 mapping for unfamiliar formats. The file lives inside the container at
 `/data/portfolios/` and Claude Code never sees the raw rows.

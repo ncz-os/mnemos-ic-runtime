@@ -13,7 +13,7 @@
 // Or apply servers individually:
 //
 //     openclaw mcp set --name investorclaw --transport http \
-//       --url http://127.0.0.1:8090/mcp
+//       --url http://127.0.0.1:18090/mcp
 //     openclaw mcp set --name mnemos --transport http \
 //       --url http://127.0.0.1:5002/mcp
 //
@@ -24,7 +24,7 @@
 {
   mcp: {
     servers: {
-      investorclaw: { transport: "http", url: "http://127.0.0.1:8090/mcp" },
+      investorclaw: { transport: "http", url: "http://127.0.0.1:18090/mcp" },
       mnemos:       { transport: "http", url: "http://127.0.0.1:5002/mcp" }
     }
   }

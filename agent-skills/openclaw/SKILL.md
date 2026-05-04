@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for OpenClaw via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.22","runtime":"openclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.23","runtime":"openclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -83,6 +83,21 @@ right tool automatically. Examples:
 - "How am I doing this year?" → `investorclaw.portfolio_performance`
 - "What did I tell you about BABA last month?" → `mnemos.search_memories`
 
+| Intent | Phrasing |
+|---|---|
+| Holdings | "What's in my portfolio?" • "Show me my positions" |
+| Performance | "How am I doing this year?" • "What's my Sharpe ratio?" |
+| Bonds | "Show me my bond exposure and yield-to-maturity" |
+| Allocation | "What's my sector exposure?" |
+| Optimization | "Help me rebalance to a 60/40 target" |
+| Market data | "What's the current price of NVDA?" |
+| News | "Today's news on my holdings" |
+| Reports | "Generate today's EOD report" • "Prepare an advisor brief" |
+
+The first call after a cold cache may take 30–60 seconds while the
+deterministic pipeline builds the signed envelope; subsequent calls reuse
+the cache.
+
 A typical flow:
 
 1. User asks: *"What changed since last review?"*
@@ -92,6 +107,27 @@ A typical flow:
 4. LLM compares the two and synthesizes a narrative.
 5. LLM calls `mnemos.create_memory` to record salient observations from
    the review.
+
+## Recommended narrative model
+
+openclaw's chat completion goes through whichever provider is configured
+in `models.providers.<name>` of `~/.openclaw/openclaw.json`. **Anthropic
+models are forbidden** on the claws stack (effective 2026-04-04).
+
+Recommended:
+
+- **Default narrative** — Together AI `MiniMaxAI/MiniMax-M2` — cheapest
+  tier, large context, fleet default; this is what the InvestorClaw
+  container expects via `INVESTORCLAW_NARRATIVE_MODEL`.
+- **Faster / cheaper alternative** — Together AI `google/gemma-4-31B-it`
+  — ~100 tok/s, ~$0.0008 / 1 K tokens, excellent quality.
+- **Local-only / offline** — Ollama `gemma4:e4b` on host — zero cloud
+  cost, GPU-bound, no key required.
+
+Set `TOGETHER_API_KEY` in the InvestorClaw container's
+`portfolios/keys.env` (or via `portfolio_keys_set`) so the engine can
+synthesize narratives directly. openclaw's own model config is a
+separate concern.
 
 After delivering analysis, the LLM should record only non-obvious
 observations the user might want next time — not every detail, just the
@@ -105,7 +141,7 @@ ones that would be hard to recover from re-reading the data.
   The narrative is decoration. If a portfolio file format isn't
   recognized, the tool returns a structured error with detected columns;
   surface that error and direct the user to the dashboard's column-mapping
-  wizard at `http://localhost:8092/portfolios/map`.
+  wizard at `http://localhost:18092/portfolios/map`.
 
 - **Educational only — never investment advice.** All outputs include
   the disclaimer envelope. Echo it when summarizing for the user. Do not
@@ -119,7 +155,7 @@ ones that would be hard to recover from re-reading the data.
   *its* chat completions through `models.providers.<name>` in
   `~/.openclaw/openclaw.json` (Together, OpenAI, Ollama, etc.). That is
   unrelated to InvestorClaw's optional narrative tier, which is configured
-  inside the InvestorClaw dashboard at `http://localhost:8092/`.
+  inside the InvestorClaw dashboard at `http://localhost:18092/`.
 
 ## v4.0 vs v2.x — what's different on openclaw
 

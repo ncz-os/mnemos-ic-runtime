@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for Hermes via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.22","runtime":"hermes","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.23","runtime":"hermes","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -126,19 +126,55 @@ the tool catalog gains:
 ## Usage idioms
 
 Just ask portfolio questions in chat. Hermes' LLM picks the right
-MCP tool from the catalog automatically:
+MCP tool from the catalog automatically.
+
+### Cookbook — what to ask
+
+| Intent | Phrasing |
+|---|---|
+| Holdings | "What's in my portfolio?" • "Show me my positions" |
+| Performance | "How am I doing this year?" • "What's my Sharpe ratio?" |
+| Bonds | "Show me my bond exposure and yield-to-maturity" |
+| Allocation | "What's my sector exposure?" |
+| Optimization | "Help me rebalance to a 60/40 target" |
+| Market data | "What's the current price of NVDA?" |
+| News | "Today's news on my holdings" |
+| Reports | "Generate today's EOD report" • "Prepare an advisor brief" |
+| Fresh data | "Prices moved — refresh before answering" |
+
+The first call after a cold cache may take 30–60 seconds while the
+deterministic pipeline builds the signed envelope; subsequent calls reuse
+the cache.
 
 ```bash
 hermes chat -q "What's in my portfolio?" \
-  --provider gemini -m gemini-2.5-flash --yolo
+  --provider together -m MiniMaxAI/MiniMax-M2 --yolo
 
 hermes chat -q "What changed since last week?" \
-  --provider together -m MiniMaxAI/MiniMax-M2.7 --yolo
+  --provider together -m google/gemma-4-31B-it --yolo
 
 hermes chat -q "Refresh my market data and show me the worst
                 performer." \
-  --provider gemini -m gemini-2.5-flash --yolo
+  --provider together -m MiniMaxAI/MiniMax-M2 --yolo
 ```
+
+## Recommended narrative model
+
+hermes routes its chat completions through whichever provider the user
+selects on the command line or in `~/.hermes/config.yaml`. **Anthropic
+models are forbidden** on the claws stack (effective 2026-04-04).
+
+Recommended providers for the InvestorClaw narrative tier (set
+`TOGETHER_API_KEY` in the container's `portfolios/keys.env` or via
+`portfolio_keys_set`):
+
+- **Default narrative** — Together AI `MiniMaxAI/MiniMax-M2` — cheapest
+  tier, large context, fleet default; this is what the InvestorClaw
+  container expects via `INVESTORCLAW_NARRATIVE_MODEL`.
+- **Faster / cheaper alternative** — Together AI `google/gemma-4-31B-it`
+  — ~100 tok/s, ~$0.0008 / 1 K tokens, excellent quality.
+- **Local-only / offline** — Ollama `gemma4:e4b` on host — zero cloud
+  cost, GPU-bound, no key required.
 
 Recommended LLM behavior (the model already does this on its own,
 but worth knowing):
@@ -165,7 +201,7 @@ but worth knowing):
   isn't recognized, the tool returns a structured error with detected
   columns and supported formats. Surface that to the user — point
   them at the dashboard's column-mapping wizard at
-  http://localhost:8092/portfolios/map.
+  http://localhost:18092/portfolios/map.
 - **Educational only — never investment advice.** All outputs include
   the disclaimer envelope. Echo it when summarizing.
 - **MCP servers are local by default** at `http://127.0.0.1:18090/mcp`

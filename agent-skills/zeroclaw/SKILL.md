@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for ZeroClaw via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.22","runtime":"zeroclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.23","runtime":"zeroclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -100,6 +100,23 @@ Once the MCP servers are registered, your tool catalog gains:
 zeroclaw routes natural-language requests to MCP tools without manual
 hinting. These are the expected interaction shapes:
 
+### Cookbook — what to ask
+
+| Intent | Phrasing |
+|---|---|
+| Holdings | "What's in my portfolio?" • "Show me my positions" |
+| Performance | "How am I doing this year?" • "What's my Sharpe ratio?" |
+| Bonds | "Show me my bond exposure and yield-to-maturity" |
+| Allocation | "What's my sector exposure?" |
+| Optimization | "Help me rebalance to a 60/40 target" |
+| Market data | "What's the current price of NVDA?" |
+| News | "Today's news on my holdings" |
+| Reports | "Generate today's EOD report" • "Prepare an advisor brief" |
+
+The first call after a cold cache may take 30–60 seconds while the
+deterministic pipeline builds the signed envelope; subsequent calls reuse
+the cache.
+
 **Snapshot questions**
 
 - "What's in my portfolio?" → `investorclaw.portfolio_holdings`
@@ -133,13 +150,34 @@ hinting. These are the expected interaction shapes:
 zeroclaw will sequence these on its own when the user asks for a full
 review. You don't have to script the chain.
 
+## Recommended narrative model
+
+zeroclaw routes its chat completions through whichever provider is
+configured in `~/.zeroclaw/config.toml`. **Anthropic models are forbidden**
+on the claws stack (effective 2026-04-04).
+
+Recommended providers for the InvestorClaw narrative tier (set
+`TOGETHER_API_KEY` in the container's `portfolios/keys.env` or via
+`portfolio_keys_set`):
+
+- **Default narrative** — Together AI `MiniMaxAI/MiniMax-M2` — cheapest
+  tier, large context, fleet default.
+- **Faster / cheaper alternative** — Together AI `google/gemma-4-31B-it`
+  — ~100 tok/s, ~$0.0008 / 1 K tokens.
+- **Local-only / offline** — Ollama `gemma4:e4b` on host — zero cloud
+  cost, GPU-bound, no key required.
+
+zeroclaw's own model (separate from InvestorClaw's narrative tier)
+should also avoid Anthropic per the directive — Together MiniMax-M2 is
+the fleet default for both layers.
+
 ## Important behaviors
 
 - **The investorclaw tools are deterministic.** If a portfolio CSV
   format isn't recognized, you'll get a structured error listing
   detected columns and supported formats. Surface the error verbatim;
   don't ask the LLM to guess column mappings. Direct the user to the
-  dashboard wizard at `http://127.0.0.1:8092/portfolios/map`.
+  dashboard wizard at `http://127.0.0.1:18092/portfolios/map`.
 
 - **Trust the structured output, decorate the narrative.** Every
   `investorclaw.*` tool returns an `ic_result` envelope (the data) plus

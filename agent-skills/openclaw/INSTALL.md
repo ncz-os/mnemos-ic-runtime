@@ -114,7 +114,7 @@ The LLM should pick the `investorclaw.portfolio_holdings` tool from its
 schema, call the MCP server at `127.0.0.1:18090/mcp`, and return a
 structured summary. If you don't yet have a portfolio file uploaded, the
 tool will return a structured "no portfolio detected" envelope — open
-the dashboard at `http://localhost:8092/` to upload one.
+the dashboard at `http://localhost:18092/` to upload one.
 
 ## Networking note (if openclaw runs in a container)
 
@@ -178,7 +178,7 @@ or compose-network membership.
 
 ### Dashboard
 
-The dashboard at `http://localhost:8092/` is where users upload
+The dashboard at `http://localhost:18092/` is where users upload
 portfolio files, configure the optional InvestorClaw narrative tier
 (separate from openclaw's own LLM provider config), and inspect raw
 `ic_result` envelopes for debugging. Bookmark it.

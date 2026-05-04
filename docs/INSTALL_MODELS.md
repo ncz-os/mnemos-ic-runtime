@@ -253,8 +253,8 @@ be a strictly faster path layered on top — not an exception to it.
   why-not-how complement)
 - `SKILL.md` — the runtime SKILL.md ClawHub publishes
 - `agent-skills/*/SKILL.md` — per-runtime install hint files (MIT-0)
-- `argonautsystems/ic-engine` — engine source of truth
-- `argonautsystems/clio` — AI primitives (schema-map, normalize, vision)
+- `argonautsystems/ic-engine` — engine source of truth (https://github.com/argonautsystems/ic-engine,
+  build mirror at https://gitlab.com/argonautsystems/ic-engine)
 - AgentSkills spec — https://agentskills.io
 - ClawHub — https://clawhub.ai (skill registry, Apache 2.0 + MIT-0)
 - MCP spec — https://modelcontextprotocol.io

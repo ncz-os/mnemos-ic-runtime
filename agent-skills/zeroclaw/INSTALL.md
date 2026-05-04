@@ -54,7 +54,7 @@ This starts two containers bound to localhost:
 | --- | --- | --- |
 | mnemos | `mnemos-os/mnemos-rs:4.2` | `127.0.0.1:5002` |
 | ic-engine | `mnemos-os/ic-engine:4.1.22-cpu` | `127.0.0.1:18090` |
-| dashboard (optional) | bundled | `127.0.0.1:8092` |
+| dashboard (optional) | bundled | `127.0.0.1:18092` |
 
 Wait for health:
 
@@ -115,7 +115,7 @@ structured "no portfolio loaded" envelope and points you at the
 dashboard wizard:
 
 ```
-http://127.0.0.1:8092/
+http://127.0.0.1:18092/
 ```
 
 Upload a broker CSV / Excel / PDF there, then re-run the agent
@@ -147,7 +147,7 @@ retry. If the hang persists, check `docker compose logs ic-engine`.
 
 **`investorclaw.portfolio_*` returns "no portfolio loaded".** The
 engine has not detected a portfolio file. Open the dashboard at
-`http://127.0.0.1:8092/`, upload a CSV/PDF, then call
+`http://127.0.0.1:18092/`, upload a CSV/PDF, then call
 `investorclaw.portfolio_refresh` (or just retry the original prompt).
 
 **Port already in use on 5002, 8090, or 8092.** Stop the conflicting

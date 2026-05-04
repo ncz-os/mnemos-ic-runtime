@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for Claude Desktop via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.22","runtime":"claude-desktop","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.23","runtime":"claude-desktop","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -72,14 +72,38 @@ quit and relaunched, the model gains two new tool namespaces.
 
 You don't invoke tools by name — you just talk to Claude. Examples:
 
-- "What's in my portfolio?" → Claude calls `investorclaw.portfolio_holdings`
-- "How did I do last quarter?" → Claude calls `investorclaw.portfolio_performance`
-- "What if rates rise 100bps?" → Claude calls `investorclaw.portfolio_scenario`
-- "Remember that I treat BABA as a sentimental hold." → Claude calls `mnemos.create_memory`
-- "What did we discuss about my bond ladder last time?" → Claude calls `mnemos.search_memories`
+| Intent | Phrasing |
+|---|---|
+| Holdings | "What's in my portfolio?" • "Show me my positions" |
+| Performance | "How am I doing this year?" • "What's my Sharpe ratio?" |
+| Bonds | "Show me my bond exposure and yield-to-maturity" |
+| Allocation | "What's my sector exposure?" |
+| Optimization | "Help me rebalance to a 60/40 target" |
+| Market data | "What's the current price of NVDA?" |
+| News | "Today's news on my holdings" |
+| Reports | "Generate today's EOD report" • "Prepare a brief for my advisor" |
+| Stress test | "What if rates rise 100 bps?" |
+| Memory | "Remember that I treat BABA as a sentimental hold" • "What did we discuss about my bond ladder last time?" |
 
 Claude routes the request to the right tool, surfaces the structured
-result, and decorates it with narrative context.
+result, and decorates it with narrative context. The first call after a
+cold cache may take 30–60 seconds while the deterministic pipeline builds
+the signed envelope; subsequent calls reuse the cache.
+
+## Recommended model split
+
+Claude Desktop uses the agent's own LLM — no external API key required.
+
+- **Narrative**: Haiku 4.5 — fast, cheap, ~10× lower output cost than
+  Sonnet. With a clean signed envelope, narrative synthesis is mostly
+  transcription, so the cheap model is sufficient.
+- **Validator**: Sonnet 4.6 (default) or Opus 4.7 (escalation) — gates
+  the Haiku output for fabrication, mis-quoted numbers, and training-leak
+  drift. Validator output is short (~1 K tokens), so the smart-model bill
+  stays low.
+
+Cost-shaped: cheap model on the long output, smart model on the short
+safety check.
 
 ## Important behaviors
 
@@ -99,7 +123,7 @@ result, and decorates it with narrative context.
   machine.
 - **Unknown CSV format?** The engine returns a structured error with
   detected columns. Claude will direct you to the column-mapping
-  wizard at `http://localhost:8092/portfolios/map` rather than
+  wizard at `http://localhost:18092/portfolios/map` rather than
   guessing.
 
 ## What this does NOT do
@@ -116,7 +140,7 @@ result, and decorates it with narrative context.
   instructions including the exact Claude Desktop config edit.
 - **`config-snippet.json`** in this directory — the JSON block to merge
   into `claude_desktop_config.json`.
-- **Dashboard** at `http://localhost:8092` once running — upload
+- **Dashboard** at `http://localhost:18092` once running — upload
   portfolio files, configure provider keys, manage memory retention,
   inspect MCP traffic.
 

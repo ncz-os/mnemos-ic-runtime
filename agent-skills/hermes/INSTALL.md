@@ -123,7 +123,7 @@ hermes chat -q "What is in my portfolio?" \
 (Substitute your preferred provider / model — Together /
 MiniMaxAI/MiniMax-M2.7, OpenAI / gpt-4.5, etc.)
 
-Then open the dashboard at <http://localhost:8092> to:
+Then open the dashboard at <http://localhost:18092> to:
 
 - Upload a broker CSV / XLS / PDF.
 - Configure provider API keys (if the service should call out to
@@ -152,7 +152,7 @@ tool natively.
    `curl -fsS http://127.0.0.1:5002/healthz` both 200.
 
 **Tools appear but `portfolio_ask` returns "no portfolio loaded".**
-Open <http://localhost:8092>, upload a broker CSV / XLS / PDF, then
+Open <http://localhost:18092>, upload a broker CSV / XLS / PDF, then
 re-ask. The dashboard's column-mapping wizard handles non-standard
 broker formats.
 

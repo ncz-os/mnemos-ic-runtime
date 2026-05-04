@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for Claude Code via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.22","runtime":"claude-code","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.23","runtime":"claude-code","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -95,6 +95,40 @@ catalog gains:
   preferences, prior questions, or current investing context
 - `mnemos.list_memories` — browse by category / date
 
+## What to ask — example queries
+
+| Intent | Phrasing |
+|---|---|
+| Holdings | "What's in my portfolio?" • "Show me my positions" |
+| Performance | "How am I doing this year?" • "What's my Sharpe ratio?" |
+| Bonds | "Show me my bond exposure and yield-to-maturity" |
+| Allocation | "What's my sector exposure?" • "How concentrated am I?" |
+| Optimization | "Help me rebalance to a 60/40 target" |
+| Market data | "What's the current price of NVDA?" |
+| News | "Today's news on my holdings" |
+| Reports | "Generate today's EOD report" • "Prepare an advisor brief" |
+| Fresh data | "Prices moved — refresh before answering" → `/refresh` |
+
+The first call after a cold cache may take 30–60 seconds while the
+deterministic pipeline builds the signed envelope. Subsequent calls reuse
+the cache.
+
+## Recommended model split
+
+Claude Code uses the agent's own LLM — no external API key required.
+
+- **Narrative**: Haiku 4.5 — fast, cheap, ~10× lower output cost than
+  Sonnet. With a clean signed envelope, narrative synthesis is mostly
+  transcription, so the cheap model is sufficient.
+- **Validator**: Sonnet 4.6 (default) or Opus 4.7 (escalation) — gates
+  the Haiku output for fabrication, mis-quoted numbers, and training-leak
+  drift. Validator output is short (~1 K tokens), so the smart-model bill
+  stays low.
+
+Cost-shaped: cheap model on the long output, smart model on the short
+safety check. Total session cost on a 100-position portfolio typically
+lands well under $0.01.
+
 ## How to use it
 
 1. **For portfolio questions:** prefer `/ask "<question>"`. It's
@@ -117,9 +151,21 @@ catalog gains:
    during the 2026-04-30 review"). Don't over-record — only record what
    wouldn't be obvious from re-reading the data later.
 
-5. **When the user uploads a portfolio file:** direct them to the
-   dashboard at http://localhost:8092 (the file goes into the container
-   directly — Claude Code does not need to handle the upload).
+5. **When the user uploads a portfolio file:** stage the attachment to
+   the bind-mounted `portfolios/` directory (see top-level SKILL.md for
+   the agent file-staging contract), then call `portfolio_setup`
+   followed by `portfolio_ask`. Or direct the user to the dashboard at
+   http://localhost:18092 if they prefer to drop files there directly.
+
+## Presentation rules
+
+- Preserve quoted source text, numerical values, timestamps, and
+  freshness labels exactly.
+- Never fabricate market, ticker, bond, news, or optimization data.
+- If the engine's signed envelope lacks a requested fact, say
+  InvestorClaw did not provide it and quote the engine's limitation
+  verbatim.
+- If data looks stale, suggest `/refresh` before answering.
 
 ## Important behaviors
 
@@ -128,7 +174,7 @@ catalog gains:
   structured error with detected columns and supported formats. Don't
   ask the LLM to disambiguate — surface the error and direct the user
   to the dashboard's column-mapping wizard at
-  http://localhost:8092/portfolios/map.
+  http://localhost:18092/portfolios/map.
 
 - **Educational only — never investment advice.** All outputs include
   a disclaimer envelope. Echo it when summarizing for the user. Do not
@@ -138,10 +184,11 @@ catalog gains:
   move money, place orders, or access brokerage accounts. If the user
   asks for any of those, decline and direct them to a licensed advisor.
 
-- **Local by default.** MCP endpoints are on `127.0.0.1` (8090 +
-  5002). If the user has deployed the service to a remote host
-  (Tailscale VM, cloud), the URLs change but the tool surface is
-  identical — the user edits the manifest's MCP server URLs.
+- **Local by default.** MCP endpoint is on `127.0.0.1:18090` (REST +
+  MCP); dashboard is on `127.0.0.1:18092`. If the user has deployed the
+  service to a remote host (Tailscale VM, cloud), the URLs change but
+  the tool surface is identical — the user edits the manifest's MCP
+  server URL.
 
 ## When the plugin can't reach the service
 

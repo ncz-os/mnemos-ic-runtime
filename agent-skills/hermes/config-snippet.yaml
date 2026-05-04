@@ -12,13 +12,13 @@
 # re-handshakes with the MCP servers at startup.
 #
 # Verify with:   hermes mcp list
-# Expected:      investorclaw  http  http://127.0.0.1:8090/mcp  connected
+# Expected:      investorclaw  http  http://127.0.0.1:18090/mcp  connected
 #                mnemos        http  http://127.0.0.1:5002/mcp  connected
 
 mcp_servers:
   investorclaw:
     transport: http
-    url: http://127.0.0.1:8090/mcp
+    url: http://127.0.0.1:18090/mcp
   mnemos:
     transport: http
     url: http://127.0.0.1:5002/mcp

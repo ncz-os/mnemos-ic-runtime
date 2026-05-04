@@ -32,7 +32,7 @@ This repo owns:
 docker compose -f https://raw.githubusercontent.com/mnemos-os/mnemos-ic-runtime/main/compose.yml up -d
 
 # Open the dashboard:
-open http://127.0.0.1:8092/
+open http://127.0.0.1:18092/
 
 # Connect your agent: see SKILL.md for per-agent config blocks
 ```

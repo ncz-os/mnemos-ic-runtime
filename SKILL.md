@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer — holdings, performance, Sharpe + Sortino, FRED yield curves, bond duration, sector breakdowns, scenario rebalancing — via MCP-HTTP. Backed by ic-engine and clio.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.22","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp","transport":"streamable-http"}
+metadata: {"license":"MIT-0","version":"4.1.23","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp","transport":"streamable-http"}
 ---
 
 <!--
@@ -157,6 +157,75 @@ The JSON response has a `narrative` field with the human-readable answer — quo
 
 ---
 
+## What to ask — example queries
+
+Once installed, ask portfolio questions in natural language. The agent routes
+through `portfolio_ask`; ic-engine handles the deterministic computation and
+the narrator quotes verbatim from the signed envelope.
+
+| Intent | Example phrasing |
+|---|---|
+| **Holdings snapshot** | "What's in my portfolio?" • "Show me my positions" • "What do I own?" |
+| **Performance** | "How am I doing this year?" • "What's my Sharpe ratio?" • "Show me my drawdowns" |
+| **Bonds** | "Show me my bond exposure and yield-to-maturity" • "What's my bond ladder look like?" |
+| **Allocation / risk** | "What's my sector exposure?" • "How concentrated is my portfolio?" • "What's my risk profile?" |
+| **Optimization / rebalancing** | "Help me rebalance to a 60/40 target" • "Show me an efficient frontier" |
+| **Market data** | "What's the current price of NVDA?" • "How is the S&P performing today?" |
+| **Fixed-income concepts** | "What does yield-to-maturity mean?" • "Explain duration" |
+| **News** | "Today's news on my holdings" • "Crypto news today" |
+| **Reports** | "Generate today's EOD report" • "Prepare a full analysis for my advisor meeting" |
+| **Fresh data** | "Prices moved — refresh before answering" → triggers `portfolio_refresh` |
+
+The first call after a cold cache may take 30–60 seconds while the
+deterministic pipeline builds the signed envelope. Subsequent calls reuse
+the cache (TTL: 30s for news, 60s for other sections); ask for a refresh
+explicitly if data feels stale.
+
+---
+
+## Agent routing rules
+
+These rules apply when an agent has the InvestorClaw skill installed:
+
+**Use InvestorClaw — do NOT answer from training data, web search, or browsing — for:**
+- Any portfolio / holdings / positions question
+- Performance, returns, Sharpe/Sortino, drawdown
+- Bonds, yield-to-maturity, duration, ladders
+- Sector / asset / account allocation
+- Optimization, rebalancing, target allocation, scenarios
+- Cash flow, dividend / coupon calendars
+- Analyst ratings, price targets
+- Today's news on holdings or market-wide topics
+- Live ticker prices and quotes
+- EOD reports, peer comparison, what-changed analysis
+
+**Deterministic-first rules:**
+- Never calculate portfolio metrics in the agent — call the tool.
+- Never fabricate market, ticker, bond, portfolio, optimization, or news data.
+- Preserve quoted source passages, numbers, dates, timestamps, and freshness
+  labels exactly.
+- If the signed envelope lacks a requested fact, say InvestorClaw did not
+  provide it and quote the engine's limitation verbatim.
+- Use `portfolio_refresh` only when the user asks for fresh data or when
+  data appears stale.
+
+**Attachment handling:**
+- When the user attaches a CSV / XLS / XLSX / PDF / screenshot in the same
+  turn as a portfolio question, stage the file to the bind-mounted
+  `portfolios/` directory, call `portfolio_setup`, then ask the original
+  question.
+- Do not ask the user to move files manually; the agent owns staging.
+- Report low-confidence extraction or setup gaps exactly as InvestorClaw
+  returns them.
+
+**Educational guardrails:**
+- All output is educational, not investment advice.
+- Never present "buy/sell" recommendations as advice.
+- Never assess suitability for the user's situation.
+- Preserve the engine's disclaimer language verbatim.
+
+---
+
 ## Required response format (when answering as an agent)
 
 End every portfolio reply with:
@@ -185,6 +254,25 @@ curl -sS -X POST http://127.0.0.1:18090/api/portfolio/setup -H 'Content-Type: ap
 ```
 
 Supported formats: UBS, Schwab, Fidelity, Vanguard, ETrade, Robinhood (CSV/XLS); generic CSV with `symbol`/`quantity`/`value` columns; PDF statements (auto-extracted).
+
+### Broker export instructions
+
+Most major US brokers expose a CSV download of holdings. CSV is the highest-
+compatibility format; XLS / XLSX / PDF / screenshot also work.
+
+| Broker | Path |
+|---|---|
+| Schwab | Accounts → Positions → Export CSV |
+| Fidelity | NetBenefits → Investments → Download CSV |
+| Vanguard | My Accounts → Download Holdings |
+| UBS | Wealth Management → Holdings → Export |
+| ETrade | Portfolio → Holdings → Download |
+| Robinhood | Account → Statements → CSV |
+
+When the user attaches a broker file directly to an agent chat, the agent
+stages it to the bind-mounted `portfolios/` directory, then calls
+`portfolio_setup` followed by `portfolio_ask`. Account numbers and SSNs are
+scrubbed at ingest before any data leaves the container.
 
 ---
 
@@ -286,6 +374,72 @@ The container reads from `/data/keys.env` at boot.
 
 ---
 
+## Model recommendations
+
+InvestorClaw uses two LLM roles when answering: **narrative** (synthesizes
+the signed envelope into prose) and **validator** (checks the narrative
+against the envelope for fabrication and number-preservation). The
+recommended model mix depends on your runtime.
+
+### Claude Code / Claude Desktop
+
+The agent's own LLM does both roles — no external API key required.
+
+- **Narrative**: Haiku 4.5 — fast, cheap, ~10× lower output cost than
+  Sonnet. Synthesis with a clean envelope is mostly transcription, so the
+  cheap model is sufficient.
+- **Validator**: Sonnet 4.6 (default) or Opus 4.7 (escalation) — gates the
+  Haiku output for fabrication, mis-quoted numbers, and training-leak
+  drift. Validator output is short (~1 K tokens) so the smart-model bill
+  stays low.
+
+This split is cost-shaped: cheap model on the long output, smart model on
+the short safety check. Total session cost on a 100-position portfolio
+typically lands well under $0.01.
+
+### openclaw / zeroclaw / hermes
+
+Anthropic models are forbidden on the claws stack (effective 2026-04-04).
+Bring your own provider via `TOGETHER_API_KEY` (or equivalent). Fleet
+defaults:
+
+- **Default narrative**: Together AI `MiniMaxAI/MiniMax-M2` — cheapest
+  tier, large context, ships as the container default.
+- **Faster / cheaper alternative**: Together AI `google/gemma-4-31B-it`
+  — ~100 tok/s, ~$0.0008 / 1 K tokens, excellent quality for narrative
+  synthesis.
+- **Local-only / offline**: Ollama `gemma4:e4b` on host — zero cloud cost,
+  GPU-bound, no key required.
+
+To switch the narrative model, set `INVESTORCLAW_NARRATIVE_MODEL` in
+`portfolios/keys.env` (e.g. `INVESTORCLAW_NARRATIVE_MODEL=google/gemma-4-31B-it`).
+The container reads it on next call without restart.
+
+---
+
+## Data privacy
+
+**Stays on your machine:**
+- Raw broker exports (CSV / XLS / PDF) in `portfolios/`
+- Account numbers and SSNs (scrubbed at ingest)
+- Full position details (lot history, cost basis)
+- Python computation internals (intermediate calculations)
+
+**Sent to the configured LLM provider for narrative synthesis:**
+- The user's question
+- The HMAC-signed JSON envelope produced by ic-engine
+- Computed metrics needed for presentation
+
+**Never sent anywhere:**
+- Raw PII (account numbers, SSNs, names)
+- Pre-computation intermediate state
+- Other portfolios on the same disk
+
+InvestorClaw never executes trades, never moves money, never accesses
+brokerage APIs for transactions. Output is educational only.
+
+---
+
 ## Verify install + compliance
 
 ```bash
@@ -308,6 +462,90 @@ from the [`mcp-contracts` repo](https://github.com/mnemos-os/mcp-contracts) into
 
 ```bash
 python3 test_mcp_compliance.py --url http://127.0.0.1:18090/mcp
+```
+
+---
+
+## Dashboard
+
+The container exposes a single-page HTML dashboard on port `:18092`:
+
+```bash
+open http://localhost:18092/        # macOS
+xdg-open http://localhost:18092/    # Linux
+start http://localhost:18092/       # Windows
+```
+
+Tabs cover: Holdings · Performance · Bonds · Analyst · News · Cashflow ·
+Optimize · Synthesis · What-changed · Tax · Scenarios · Peer · Reports ·
+Settings · About.
+
+The dashboard reads the same signed envelope ic-engine produces for
+`portfolio_ask`, so metrics stay in sync. Use it for visual review of
+holdings / performance, or as a fallback interface when MCP integration
+is flaky.
+
+---
+
+## Troubleshooting
+
+### Container won't start
+
+```bash
+docker compose logs ic-engine | tail -50
+docker ps | grep ic-engine        # confirm running + healthy
+curl -sS http://127.0.0.1:18090/healthz
+```
+
+If `healthz` returns `{"init_state":"failed", ...}`, check the `init_error`
+field for the engine's exact failure message.
+
+### "No portfolio found" when asking
+
+- Drop a CSV / XLS / PDF into `portfolios/` (the host bind mount).
+- Then call setup:
+  `curl -X POST http://127.0.0.1:18090/api/portfolio/setup -d '{}'`
+- Then ask again:
+  `curl -X POST http://127.0.0.1:18090/api/portfolio/ask -d '{"question":"what's in my portfolio?"}'`
+
+The agent can stage attached files to `portfolios/` directly when the user
+sends them in chat.
+
+### "API key errors" / degraded data
+
+Keys are optional. The deterministic-engine works key-less in degraded
+mode (no narrative synthesis, no live news, yfinance-only quotes). To
+check what's configured:
+
+```bash
+curl -X POST http://127.0.0.1:18090/api/portfolio/keys_status -d '{}'
+```
+
+Set the missing key via the REST endpoint shown in
+[Optional configuration](#optional-configuration).
+
+### "First call is slow (5–15 minutes)"
+
+Only happens on a cold cache for portfolios with 200+ positions. The
+container runs `IC_INITIALIZE_ON_BOOT=1` by default — initialization runs
+at container start, so by the time the agent connects, the cache is warm.
+If you disabled that env var, expect cold-start latency on first ask.
+
+Check init progress: `curl http://127.0.0.1:18090/api/portfolio/initialize/status`
+
+### "Container is healthy but `portfolio_ask` times out"
+
+- Bridge subprocess timeout is 1800 s on `portfolio_ask` and `portfolio_refresh`.
+- Engine P1 parallel-stage timeout is 600 s.
+- If you hit either, the engine ran out of upstream API budget (yfinance
+  429, Finnhub rate limit, etc.). Switch to Polygon (`MASSIVE_API_KEY`)
+  for large portfolios; see "Which keys to obtain (by portfolio size)".
+
+### Reset cache + state
+
+```bash
+docker compose down -v   # removes the data volume — all envelopes lost
+docker compose up -d     # cold restart with auto-init
 ```
 
 ---

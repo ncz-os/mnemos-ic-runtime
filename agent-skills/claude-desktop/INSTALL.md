@@ -150,7 +150,7 @@ fresh and connect to both MCP servers.
 
 Open the dashboard in your browser:
 
-<http://localhost:8092>
+<http://localhost:18092>
 
 The first-run wizard walks you through:
 
