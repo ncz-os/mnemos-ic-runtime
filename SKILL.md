@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer — holdings, performance, Sharpe + Sortino, FRED yield curves, bond duration, sector breakdowns, scenario rebalancing — via MCP-HTTP. Backed by ic-engine and clio.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.24","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp","transport":"streamable-http"}
+metadata: {"license":"MIT-0","version":"4.1.25","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp","transport":"streamable-http"}
 ---
 
 <!--
@@ -76,15 +76,23 @@ file)? Call `portfolio_initialize` — it returns when the cache is warm again.
 
 ---
 
-## Installation (one command)
+## Installation
 
 The skill is a Docker Compose stack. With Docker or Podman installed:
 
 ```bash
-docker compose up -d  # uses compose.yml shipped in this skill
+mkdir -p portfolios     # IMPORTANT: pre-create so docker doesn't auto-create as root
+docker compose up -d    # uses compose.yml shipped in this skill
 ```
 
-That's it. The compose pulls `ghcr.io/argonautsystems/ic-engine:4.1.22-cpu` (publicly hosted, no auth) and runs it on `localhost:18090` (MCP + REST) and `localhost:18092` (dashboard).
+The first line is load-bearing. If you skip it, docker creates `./portfolios/`
+as `root:root` when starting the bind-mount, the engine runs as
+`uid=1000(ic)` inside the container, and init fails with
+`PermissionError: '/data/portfolios/setup_results.json'` and the container
+goes into `init_state=failed`. Pre-creating the directory as the host user
+sidesteps the docker bind-mount UID inheritance quirk.
+
+The compose pulls `ghcr.io/argonautsystems/ic-engine:4.1.25-cpu` (publicly hosted, no auth) and runs it on `localhost:18090` (MCP + REST) and `localhost:18092` (dashboard).
 
 ### If Docker isn't installed
 
@@ -313,7 +321,7 @@ cover the remainder.
 
 | Key | Purpose | Cost note |
 |---|---|---|
-| `TOGETHER_API_KEY` | LLM narrative synthesis (Together MiniMax-M2.7) | cheapest tier — fleet default |
+| `TOGETHER_API_KEY` | LLM narrative synthesis (Together google/gemma-4-31B-it) | serverless, fleet default |
 | `MASSIVE_API_KEY` | Polygon quotes + history (200+ symbol portfolios) | paid, un-rate-limited |
 | `FINNHUB_KEY` | Real-time quotes + analyst ratings + category news | 60/min free |
 | `MARKETAUX_API_KEY` | Financial news with broader filters than NewsAPI | 100/day free |
@@ -416,16 +424,18 @@ opting into it.
 Bring a non-Anthropic provider via `TOGETHER_API_KEY` (or equivalent).
 Fleet defaults:
 
-- **Default narrative**: Together AI `MiniMaxAI/MiniMax-M2` — cheapest
-  tier, large context, ships as the container default.
-- **Faster / cheaper alternative**: Together AI `google/gemma-4-31B-it`
-  — ~100 tok/s, ~$0.0008 / 1 K tokens, excellent quality for narrative
-  synthesis.
+- **Default narrative**: Together AI `google/gemma-4-31B-it` — serverless
+  tier, ~100 tok/s, ~$0.0008 / 1 K tokens, ships as the container default.
+- **Higher-quality alternative**: Together AI `MiniMaxAI/MiniMax-M2` —
+  larger context, but **moved off Together's serverless tier in 2026-05**
+  and now requires a paid dedicated endpoint. Use only if you've
+  provisioned that endpoint.
 - **Local-only / offline**: Ollama `gemma4:e4b` on host — zero cloud cost,
   GPU-bound, no key required.
 
 To switch the narrative model, set `INVESTORCLAW_NARRATIVE_MODEL` in
-`portfolios/keys.env` (e.g. `INVESTORCLAW_NARRATIVE_MODEL=google/gemma-4-31B-it`).
+`portfolios/keys.env` (e.g. `INVESTORCLAW_NARRATIVE_MODEL=MiniMaxAI/MiniMax-M2`
+once you have a dedicated endpoint configured at Together).
 The container reads it on next call without restart.
 
 ---
@@ -598,7 +608,7 @@ docker compose down -v
 
 - Service code: Apache 2.0 (`mnemos-os/mnemos-ic-runtime`)
 - Distribution-edge artifacts (this `SKILL.md`, `compose.yml`, `install.yaml`, `agent-skills/**`): **MIT-0** (MIT No Attribution — `LICENSE-MIT-0`). Required for ClawHub plugin publishing; the no-attribution clause means downstream skill registries can re-host without preserving copyright notice.
-- Image: `ghcr.io/argonautsystems/ic-engine:4.1.22-cpu` (also at `:latest`)
+- Image: `ghcr.io/argonautsystems/ic-engine:4.1.25-cpu` (also at `:latest`)
 - RFC: [`~/2026-05-01-dockerized-skill-convention.md`](https://github.com/mnemos-os/mnemos-ic-runtime/blob/main/RFC.md)
 - Cross-project contract: [`mnemos-os/mcp-contracts`](https://github.com/mnemos-os/mcp-contracts)
 

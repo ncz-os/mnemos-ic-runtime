@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for OpenClaw via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.24","runtime":"openclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.25","runtime":"openclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -122,11 +122,12 @@ don't deploy Anthropic on our own fleet for openclaw.
 
 Recommended:
 
-- **Default narrative** — Together AI `MiniMaxAI/MiniMax-M2` — cheapest
-  tier, large context, fleet default; this is what the InvestorClaw
-  container expects via `INVESTORCLAW_NARRATIVE_MODEL`.
-- **Faster / cheaper alternative** — Together AI `google/gemma-4-31B-it`
-  — ~100 tok/s, ~$0.0008 / 1 K tokens, excellent quality.
+- **Default narrative** — Together AI `google/gemma-4-31B-it` — serverless
+  tier, ~100 tok/s, ~$0.0008 / 1 K tokens, fleet default. This is what the
+  InvestorClaw container expects via `INVESTORCLAW_NARRATIVE_MODEL`.
+- **Higher-quality alternative** — Together AI `MiniMaxAI/MiniMax-M2` —
+  larger context, but moved off Together's serverless tier 2026-05;
+  requires a paid dedicated endpoint.
 - **Local-only / offline** — Ollama `gemma4:e4b` on host — zero cloud
   cost, GPU-bound, no key required.
 

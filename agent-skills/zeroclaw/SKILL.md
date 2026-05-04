@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for ZeroClaw via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.24","runtime":"zeroclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.25","runtime":"zeroclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -46,7 +46,7 @@ agent startup. No skill code, no shell-out, no per-tool wiring.
 The two services run as a Docker compose stack, bound to localhost:
 
 - `mnemos-os/mnemos-rs:4.2` → `127.0.0.1:5002`
-- `mnemos-os/ic-engine:4.1.22-cpu` → `127.0.0.1:18090`
+- `mnemos-os/ic-engine:4.1.25-cpu` → `127.0.0.1:18090`
 
 If the user has not installed yet, see `INSTALL.md` in this skill
 directory for ordered setup. zeroclaw cannot install the service from
@@ -166,16 +166,17 @@ Recommended providers for the InvestorClaw narrative tier (set
 `TOGETHER_API_KEY` in the container's `portfolios/keys.env` or via
 `portfolio_keys_set`):
 
-- **Default narrative** — Together AI `MiniMaxAI/MiniMax-M2` — cheapest
-  tier, large context, fleet default.
-- **Faster / cheaper alternative** — Together AI `google/gemma-4-31B-it`
-  — ~100 tok/s, ~$0.0008 / 1 K tokens.
+- **Default narrative** — Together AI `google/gemma-4-31B-it` — serverless,
+  ~100 tok/s, ~$0.0008 / 1 K tokens, fleet default.
+- **Higher-quality alternative** — Together AI `MiniMaxAI/MiniMax-M2` —
+  larger context, but moved off Together's serverless tier 2026-05;
+  requires a paid dedicated endpoint.
 - **Local-only / offline** — Ollama `gemma4:e4b` on host — zero cloud
   cost, GPU-bound, no key required.
 
 zeroclaw's own model (separate from InvestorClaw's narrative tier)
-follows the same posture — Together MiniMax-M2 is the fleet default for
-both layers; Anthropic remains a paid-API-only opt-in for end users.
+follows the same posture — Together gemma-4-31B-it is the fleet default
+for both layers; Anthropic remains a paid-API-only opt-in for end users.
 
 ## Important behaviors
 
@@ -222,7 +223,9 @@ This skill payload (`SKILL.md` + `SKILL.toml` in
 
 - No `*.sh`, `*.bash`, or other executables
 - No symlinks
-- No `curl … | sh` or `wget … | bash` patterns
+- No remote-script-piping patterns (the audit rejects shell-pipeline
+  install hints; we use `docker compose up -d` against a vendored
+  `compose.yml` instead)
 - No remote markdown image/link references
 - All install/operational instructions live in `INSTALL.md`, which is
   user-facing documentation outside the registered skill payload

@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for Hermes via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.24","runtime":"hermes","image":"ghcr.io/argonautsystems/ic-engine:4.1.22-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.25","runtime":"hermes","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -76,7 +76,7 @@ hermes (host)
   │     mnemos       → http://127.0.0.1:5002/mcp
   ▼
 Docker compose (~/.investorclaw/compose.yml)
-  ├── mnemos-os/ic-engine:4.1.22-cpu       :8090   portfolio analysis MCP
+  ├── mnemos-os/ic-engine:4.1.25-cpu       :8090   portfolio analysis MCP
   └── mnemos-os/mnemos-rs:4.2       :5002   memory + KG MCP
        (dashboard at :8092 for portfolio upload + key config)
 ```
@@ -148,14 +148,14 @@ the cache.
 
 ```bash
 hermes chat -q "What's in my portfolio?" \
-  --provider together -m MiniMaxAI/MiniMax-M2 --yolo
+  --provider together -m google/gemma-4-31B-it --yolo
 
 hermes chat -q "What changed since last week?" \
   --provider together -m google/gemma-4-31B-it --yolo
 
 hermes chat -q "Refresh my market data and show me the worst
                 performer." \
-  --provider together -m MiniMaxAI/MiniMax-M2 --yolo
+  --provider together -m google/gemma-4-31B-it --yolo
 ```
 
 ## Recommended narrative model
@@ -174,11 +174,12 @@ Recommended providers for the InvestorClaw narrative tier (set
 `TOGETHER_API_KEY` in the container's `portfolios/keys.env` or via
 `portfolio_keys_set`):
 
-- **Default narrative** — Together AI `MiniMaxAI/MiniMax-M2` — cheapest
-  tier, large context, fleet default; this is what the InvestorClaw
-  container expects via `INVESTORCLAW_NARRATIVE_MODEL`.
-- **Faster / cheaper alternative** — Together AI `google/gemma-4-31B-it`
-  — ~100 tok/s, ~$0.0008 / 1 K tokens, excellent quality.
+- **Default narrative** — Together AI `google/gemma-4-31B-it` — serverless
+  tier, ~100 tok/s, ~$0.0008 / 1 K tokens, fleet default. This is what the
+  InvestorClaw container expects via `INVESTORCLAW_NARRATIVE_MODEL`.
+- **Higher-quality alternative** — Together AI `MiniMaxAI/MiniMax-M2` —
+  larger context, but moved off Together's serverless tier 2026-05;
+  requires a paid dedicated endpoint.
 - **Local-only / offline** — Ollama `gemma4:e4b` on host — zero cloud
   cost, GPU-bound, no key required.
 

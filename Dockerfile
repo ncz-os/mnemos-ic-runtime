@@ -25,7 +25,9 @@ FROM python:3.12-slim AS builder
 # Default fills in at build time; production builds should pin explicitly.
 # Repo migrated from perlowja/InvestorClaw → argonautsystems/ic-engine
 # (org migration completed in v2.5.1; commit 729dd5d on master).
-ARG IC_ENGINE_REF=feat/priceprovider-history-massive-2026-05-01
+# Pinned to gitlab main HEAD which carries the v4.1.25 narrator fix
+# (preserve OWNERSHIP routing when concept-stem matches "what is ").
+ARG IC_ENGINE_REF=main
 ARG IC_ENGINE_REPO=https://gitlab.com/argonautsystems/ic-engine.git
 
 # uv install (canonical Python toolchain per project policy)
