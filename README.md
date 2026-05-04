@@ -44,7 +44,14 @@ zeroclaw services install https://get.investorclaw.app/v4.0/compose.yml
 
 ## Architecture
 
-See [RFC-v0.1.md](RFC-v0.1.md) for the full architecture document.
+- **[docs/INSTALL_MODELS.md](docs/INSTALL_MODELS.md)** — *why* the v4.x
+  architecture splits along two install models (dockerized-skill for the
+  claw runtimes today; native-workspace SKILL.md for Claude Code once the
+  marketplace path is live) and what the contract between them is.
+- **[docs/COBOL_TESTING.md](docs/COBOL_TESTING.md)** — *why* we built the
+  Agentic COBOL 250-prompt regression suite, what the strict verdict
+  catches that no other test layer can, and how it's the v4.x ship gate.
+- **[RFC-v0.1.md](RFC-v0.1.md)** — full v4.0 architecture specification.
 
 ```
 HOST
