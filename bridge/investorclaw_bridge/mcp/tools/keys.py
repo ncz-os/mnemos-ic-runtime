@@ -50,6 +50,8 @@ def _allowlist() -> set[str]:
                 "FRED_API_KEY",
                 "NEWSAPI_KEY",
                 "ALPHA_VANTAGE_KEY",
+                "MASSIVE_API_KEY",
+                "MARKETAUX_API_KEY",
             }
     return _ALLOWLIST
 

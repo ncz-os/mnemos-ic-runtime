@@ -14,6 +14,9 @@ dependencies = [
     # FastAPI for the MCP-HTTP server + dashboard
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    # Required by FastAPI for multipart/form-data uploads
+    # (browser portfolio upload on /dashboard/upload).
+    "python-multipart>=0.0.9",
     # FastMCP / MCP Python SDK
     "mcp>=1.4",
     # HTTP client for MnemosClient

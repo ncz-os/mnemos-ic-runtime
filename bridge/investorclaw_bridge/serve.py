@@ -179,12 +179,37 @@ def main() -> int:
     from . import dashboard
     from .mcp.tools.portfolio import get_init_state as _get_init_state
     from .mcp.tools.keys import portfolio_keys_status, portfolio_keys_set
+    from .mcp._runtime import _run_ic_engine
+
+    async def _regenerate_sweep() -> dict:
+        """Run the full data-refresh + analyzer sweep that backs every tab.
+        Sequenced so a failing section doesn't abort the rest. Engine sections
+        that don't write JSON (or aren't installed) just no-op.
+        """
+        results: dict = {}
+        # Setup is fast and idempotent — re-discovers any newly uploaded files.
+        results["setup"] = await _run_ic_engine(["setup"], timeout_sec=300.0)
+        # The big refresh — pulls fresh prices for every position.
+        results["refresh"] = await _run_ic_engine(["refresh"], timeout_sec=1800.0)
+        # Per-section analyzers. Each writes its own JSON under /data/reports/.
+        sections = [
+            "performance", "bonds", "analyst", "news", "whatchanged",
+            "scenario", "optimize", "rebalance", "cashflow", "peer",
+            "markets", "synthesize",
+        ]
+        for sec in sections:
+            try:
+                results[sec] = await _run_ic_engine([sec], timeout_sec=900.0)
+            except Exception as e:  # noqa: BLE001
+                results[sec] = {"error": f"{type(e).__name__}: {e}"}
+        return results
 
     dashboard.attach_to(
         dashboard_app,
         get_init_state=_get_init_state,
         get_keys_status=portfolio_keys_status,
         set_key=lambda name, value: portfolio_keys_set({name: value}),
+        regenerate=_regenerate_sweep,
     )
 
     # ── Build the MCP-HTTP app ────────────────────────────────────────

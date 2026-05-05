@@ -80,6 +80,18 @@ KNOWN_KEYS = [
         "description": "Supplemental price data (free at alphavantage.co)",
         "required": False,
     },
+    {
+        "name": "MASSIVE_API_KEY",
+        "label": "Massive (FMP) key",
+        "description": "Fundamentals, ratios, peer comps (financialmodelingprep.com)",
+        "required": False,
+    },
+    {
+        "name": "MARKETAUX_API_KEY",
+        "label": "Marketaux key",
+        "description": "Per-symbol news with sentiment (marketaux.com)",
+        "required": False,
+    },
 ]
 
 

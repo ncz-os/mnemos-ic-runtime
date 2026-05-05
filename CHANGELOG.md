@@ -9,6 +9,55 @@ Distribution-edge artifacts (`SKILL.md`, `compose.yml`, `install.yaml`,
 `agent-skills/**`) are MIT-0; substantive code (bridge, dashboard,
 Dockerfile, tests) is Apache 2.0.
 
+## [4.1.34] — 2026-05-04
+
+### Added
+
+- **Five new dashboard tabs** to cover every cobol NLQ datapoint
+  (`harness/cobol/nlq-prompts.json`, 30 prompts):
+  - `/dashboard/optimize` — Sharpe-max + min-volatility allocations
+    plus rebalance + tax-aware rebalance trade tables
+    (covers p09 / p10 / p11 / p12 / p13)
+  - `/dashboard/cashflow` — projected dividends + bond coupons,
+    quarter and annual totals, per-symbol payment schedule (p25)
+  - `/dashboard/peer` — benchmark comparison (returns, Sharpe,
+    drawdown, correlation, beta vs VTI/SPY/AGG/etc.) (p26)
+  - `/dashboard/markets` — indices, crypto, FX, fixed-income yields
+    (p17 / p18 / p21 / p22)
+  - `/dashboard/lookup` — per-ticker quote + fundamentals form
+    (p27)
+- **Glossary** section on About tab — Sharpe, Sortino, drawdown,
+  beta, VaR, YTM, duration, allocation strategies (p20).
+- **First-time setup** numbered checklist on About tab (p29).
+- **Web-based portfolio upload** on Settings tab. Multipart form
+  posts to `POST /dashboard/upload`; file is sanitized
+  (basename + alphanumeric/`._-` only, 200-char cap), saved to
+  `/data/portfolios/<safe_name>`, then a refresh sweep is fired
+  in the background. Lists current portfolio files in a table
+  next to the form.
+- **Regenerate button** on Overview tab. `POST /dashboard/regenerate`
+  fires the full data + analyzer sweep
+  (setup → refresh → performance / bonds / analyst / news /
+  whatchanged / scenario / optimize / rebalance / cashflow /
+  peer / markets / synthesize) as a background task and redirects
+  immediately with a success banner.
+- **`MASSIVE_API_KEY` and `MARKETAUX_API_KEY`** added to the
+  setup_api `KNOWN_KEYS` list and the `keys.py` `_allowlist()`
+  fallback set, so the agent-facing `portfolio_keys_set` REST tool
+  and the dashboard Settings form can both persist them without
+  needing a `docker exec -u 0` workaround.
+- **`python-multipart>=0.0.9`** added to bridge dependencies
+  (required by FastAPI for the upload form).
+
+### NLQ coverage
+
+Final tab-to-prompt map (17 tabs, 30 NLQs):
+Overview p23/p24 · Holdings p01/p02/p11/p28 · Performance p03/p04 ·
+What Changed (delta) · Scenarios · Bonds p14/p15 · Optimize
+p09/p10/p12/p13 · Cashflow p25 · Peer p26 · Analyst p05 ·
+News p06/p16/p19 · Markets p17/p18/p21/p22 · Lookup p27 ·
+Synthesis p07/p08 · Reports p23/p24 · Settings · About p20/p29/p30.
+
 ## [4.1.29] — 2026-05-04
 
 ### Added
