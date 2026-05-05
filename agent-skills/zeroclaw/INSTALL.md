@@ -52,15 +52,15 @@ This starts two containers bound to localhost:
 
 | Container | Image | Port |
 | --- | --- | --- |
-| mnemos | `mnemos-os/mnemos-rs:4.2` | `127.0.0.1:5002` |
-| ic-engine | `mnemos-os/ic-engine:4.1.25-cpu` | `127.0.0.1:18090` |
-| dashboard (optional) | bundled | `127.0.0.1:18092` |
+| mnemos | `mnemos-os/mnemos-rs:4.2` | `localhost:5002` |
+| ic-engine | `mnemos-os/ic-engine:4.1.25-cpu` | `localhost:18090` |
+| dashboard (optional) | bundled | `localhost:18092` |
 
 Wait for health:
 
 ```
-curl -fsS http://127.0.0.1:18090/healthz
-curl -fsS http://127.0.0.1:5002/healthz
+curl -fsS http://localhost:18090/healthz
+curl -fsS http://localhost:5002/healthz
 ```
 
 Both should return 200 within ~10 seconds of `compose up`.
@@ -73,11 +73,11 @@ Open `~/.zeroclaw/config.toml` and merge in the block from
 ```toml
 [mcp.servers.investorclaw]
 transport = "http"
-url = "http://127.0.0.1:18090/mcp"
+url = "http://localhost:18090/mcp"
 
 [mcp.servers.mnemos]
 transport = "http"
-url = "http://127.0.0.1:5002/mcp"
+url = "http://localhost:5002/mcp"
 ```
 
 If `config.toml` already has an `[mcp]` section, append the
@@ -115,7 +115,7 @@ structured "no portfolio loaded" envelope and points you at the
 dashboard wizard:
 
 ```
-http://127.0.0.1:18092/
+http://localhost:18092/
 ```
 
 Upload a broker CSV / Excel / PDF there, then re-run the agent
@@ -147,7 +147,7 @@ retry. If the hang persists, check `docker compose logs ic-engine`.
 
 **`investorclaw.portfolio_*` returns "no portfolio loaded".** The
 engine has not detected a portfolio file. Open the dashboard at
-`http://127.0.0.1:18092/`, upload a CSV/PDF, then call
+`http://localhost:18092/`, upload a CSV/PDF, then call
 `investorclaw.portfolio_refresh` (or just retry the original prompt).
 
 **Port already in use on 5002, 8090, or 8092.** Stop the conflicting

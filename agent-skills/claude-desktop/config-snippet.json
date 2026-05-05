@@ -14,11 +14,11 @@
   "mcpServers": {
     "investorclaw": {
       "transport": "http",
-      "url": "http://127.0.0.1:18090/mcp"
+      "url": "http://localhost:18090/mcp"
     },
     "mnemos": {
       "transport": "http",
-      "url": "http://127.0.0.1:5002/mcp"
+      "url": "http://localhost:5002/mcp"
     }
   }
 }

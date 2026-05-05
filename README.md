@@ -295,6 +295,7 @@ See [PRIVACY.md](PRIVACY.md) for the full data-handling policy and
   selection → narration)
 - [docs/STONKMODE_AVATAR_LEGEND.md](docs/STONKMODE_AVATAR_LEGEND.md) —
   30-persona avatar reference
+- [docs/EOD_REPORT.md](docs/EOD_REPORT.md) — end-of-day report feature walkthrough (what is in the report, how to generate, performance, optional email delivery)
 - [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) —
   detailed per-tool reference for all 12 MCP tools (input / output
   schemas, latency, cache TTLs, allowlists, examples)

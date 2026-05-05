@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for OpenClaw via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.29","runtime":"openclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.30","runtime":"openclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -24,8 +24,8 @@ is Apache 2.0. See the InvestorClaw repository for that license.
 InvestorClaw is a containerized portfolio-analysis service exposed to
 openclaw as **two MCP-HTTP servers**:
 
-- `investorclaw` — portfolio analysis tools at `http://127.0.0.1:18090/mcp`
-- `mnemos` — memory + knowledge graph at `http://127.0.0.1:5002/mcp`
+- `investorclaw` — portfolio analysis tools at `http://localhost:18090/mcp`
+- `mnemos` — memory + knowledge graph at `http://localhost:5002/mcp`
 
 Both run inside a Docker compose stack on the user's machine
 (`docker compose up -d` is the entire service install). openclaw connects
@@ -154,8 +154,8 @@ ones that would be hard to recover from re-reading the data.
   the disclaimer envelope. Echo it when summarizing for the user. Do not
   recommend buying, selling, or holding specific securities.
 
-- **The MCP servers run on loopback by default.** `127.0.0.1:18090` and
-  `127.0.0.1:5002`. If the user deploys remotely (Tailscale VM, cloud
+- **The MCP servers run on loopback by default.** `localhost:18090` and
+  `localhost:5002`. If the user deploys remotely (Tailscale VM, cloud
   host), the URLs change but the tool surface is identical.
 
 - **openclaw's own LLM provider config is separate.** openclaw routes

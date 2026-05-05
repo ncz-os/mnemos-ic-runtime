@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for ZeroClaw via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.29","runtime":"zeroclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.30","runtime":"zeroclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -45,8 +45,8 @@ agent startup. No skill code, no shell-out, no per-tool wiring.
 
 The two services run as a Docker compose stack, bound to localhost:
 
-- `mnemos-os/mnemos-rs:4.2` → `127.0.0.1:5002`
-- `mnemos-os/ic-engine:4.1.25-cpu` → `127.0.0.1:18090`
+- `mnemos-os/mnemos-rs:4.2` → `localhost:5002`
+- `mnemos-os/ic-engine:4.1.25-cpu` → `localhost:18090`
 
 If the user has not installed yet, see `INSTALL.md` in this skill
 directory for ordered setup. zeroclaw cannot install the service from
@@ -184,7 +184,7 @@ for both layers; Anthropic remains a paid-API-only opt-in for end users.
   format isn't recognized, you'll get a structured error listing
   detected columns and supported formats. Surface the error verbatim;
   don't ask the LLM to guess column mappings. Direct the user to the
-  dashboard wizard at `http://127.0.0.1:18092/portfolios/map`.
+  dashboard wizard at `http://localhost:18092/portfolios/map`.
 
 - **Trust the structured output, decorate the narrative.** Every
   `investorclaw.*` tool returns an `ic_result` envelope (the data) plus

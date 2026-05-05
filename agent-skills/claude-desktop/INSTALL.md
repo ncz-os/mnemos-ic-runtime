@@ -57,8 +57,8 @@ starts are near-instant. Confirm both containers are healthy:
 
 ```bash
 docker compose ps
-curl -fsS http://127.0.0.1:18090/healthz && echo " ic-engine OK"
-curl -fsS http://127.0.0.1:5002/healthz && echo " mnemos OK"
+curl -fsS http://localhost:18090/healthz && echo " ic-engine OK"
+curl -fsS http://localhost:5002/healthz && echo " mnemos OK"
 ```
 
 Both health checks should return `200 OK`.
@@ -82,11 +82,11 @@ This is where Claude Desktop learns about the two MCP servers.
   "mcpServers": {
     "investorclaw": {
       "transport": "http",
-      "url": "http://127.0.0.1:18090/mcp"
+      "url": "http://localhost:18090/mcp"
     },
     "mnemos": {
       "transport": "http",
-      "url": "http://127.0.0.1:5002/mcp"
+      "url": "http://localhost:5002/mcp"
     }
   }
 }
@@ -112,11 +112,11 @@ Add the two new entries alongside the existing one:
     "filesystem": { "command": "...", "args": ["..."] },
     "investorclaw": {
       "transport": "http",
-      "url": "http://127.0.0.1:18090/mcp"
+      "url": "http://localhost:18090/mcp"
     },
     "mnemos": {
       "transport": "http",
-      "url": "http://127.0.0.1:5002/mcp"
+      "url": "http://localhost:5002/mcp"
     }
   }
 }

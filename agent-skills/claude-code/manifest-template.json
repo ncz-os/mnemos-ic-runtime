@@ -55,12 +55,12 @@
   "mcpServers": {
     "investorclaw": {
       "transport": "http",
-      "url": "http://127.0.0.1:18090/mcp",
+      "url": "http://localhost:18090/mcp",
       "// note": "Portfolio analysis tools. Service runs in user's Docker (mnemos-os/ic-engine:4.1.25-cpu)."
     },
     "mnemos": {
       "transport": "http",
-      "url": "http://127.0.0.1:5002/mcp",
+      "url": "http://localhost:5002/mcp",
       "// note": "Memory + knowledge graph. Service runs in user's Docker (mnemos-os/mnemos-rs:4.2)."
     }
   },

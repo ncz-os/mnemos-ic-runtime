@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer — holdings, performance, Sharpe + Sortino, FRED yield curves, bond duration, sector breakdowns, scenario rebalancing — via MCP-HTTP. Backed by ic-engine and clio.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.29","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp","transport":"streamable-http"}
+metadata: {"license":"MIT-0","version":"4.1.30","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp","transport":"streamable-http"}
 ---
 
 <!--
@@ -85,35 +85,52 @@ mkdir -p portfolios     # IMPORTANT: pre-create so docker doesn't auto-create as
 docker compose up -d    # uses compose.yml shipped in this skill
 ```
 
-**Agent install convention:** when a skills-installer (e.g.
-`openclaw skills install investorclaw`, `clawhub install
-investorclaw`) places this bundle, the agent should immediately
-proceed to run `mkdir -p portfolios && docker compose up -d` from
-the skill directory as part of completing the install. The user
-invoked the install command; they have implicitly consented to the
-install completing. Do **not** gate a second time on "Want me to
-boot it up?" — just boot it. Surface a one-line note that the docker
-pull is ~600 MB on first run and that the container will bind to
-`localhost:18090` + `:18092`.
+**Agent install convention.** When a skills-installer
+(`openclaw skills install investorclaw`, `clawhub install
+investorclaw`, etc.) places this bundle, the agent **may** proceed
+to `mkdir -p portfolios && docker compose up -d` because the user's
+install command is itself an opt-in to the install completing. But
+the agent **must** first surface the side effects to the user
+explicitly:
 
-The first command (`mkdir -p portfolios`) is load-bearing. If you skip
-it, docker creates `./portfolios/` as `root:root` when starting the
+1. `docker pull` of `~600 MB` (the engine image) on first run
+2. `docker compose up -d` binds two TCP listeners to localhost:
+   `:18090` (MCP + REST) and `:18092` (dashboard)
+3. The container auto-initializes on boot
+   (`IC_INITIALIZE_ON_BOOT=1`) and will fetch market data from
+   the configured providers (yfinance free-tier by default; other
+   providers only if API keys have been added)
+4. Persistent state lands in the `ic-engine-data` Docker volume
+   (deleted only by `docker compose down -v`)
+
+A single one-line surfacing covering all four is sufficient. Example:
+
+> Starting the container will pull a ~600 MB image, bind localhost
+> ports `:18090` and `:18092`, auto-init against yfinance, and
+> persist state in a Docker volume. Proceeding…
+
+The user retains the ability to interrupt (Ctrl-C, "no don't",
+etc.). Don't ask a yes/no question by default — that's friction the
+user has already cleared by typing the install command. **Do** ask
+when one of these conditions holds:
+
+- The host appears to be a CI runner, shared machine, or production
+  server where the user might want to review `compose.yml` first.
+- An existing `ic-engine` container is already running on the host
+  with a different image tag — confirm before disrupting.
+- The user explicitly added `--dry-run` or `--no-start` to the install
+  command (if the skills installer surfaces those flags).
+- The agent's runtime policy requires a confirmation prompt before
+  any container start (some enterprise / regulated deployments).
+
+The first command (`mkdir -p portfolios`) is load-bearing. If skipped,
+docker creates `./portfolios/` as `root:root` when starting the
 bind-mount, the engine runs as `uid=1000(ic)` inside the container,
 and init fails with
 `PermissionError: '/data/portfolios/setup_results.json'` and the
 container goes into `init_state=failed`. Pre-creating the directory
 as the host user sidesteps the docker bind-mount UID inheritance
 quirk.
-
-When to ask the user before booting (consent override — these are the
-exception, not the default):
-
-- The host appears to be a CI runner, shared machine, or production
-  server where the user might want to review compose.yml first.
-- An existing `ic-engine` container is already running on the host
-  with a different image tag — confirm before disrupting.
-- The user explicitly added `--dry-run` or `--no-start` to the install
-  command (if the skills installer surfaces those flags).
 
 The compose pulls `ghcr.io/argonautsystems/ic-engine:4.1.25-cpu` (publicly hosted, no auth) and runs it on `localhost:18090` (MCP + REST) and `localhost:18092` (dashboard).
 
@@ -738,6 +755,25 @@ docker compose down -v
 ```
 
 ---
+
+## Security model
+
+InvestorClaw is a single-user, localhost-bound, deterministic-first
+analyzer. Several behaviors that automated scanners flag as "warning"
+are intentional design choices for this threat model. Documented here
+explicitly so reviewers can audit the trade-offs:
+
+| Behavior | Why it's by design |
+|---|---|
+| **MCP + REST endpoints are unauthenticated on `127.0.0.1:18090`** | Localhost binding (`127.0.0.1:` prefix on the port spec, never `0.0.0.0`) is the security boundary. Any process running as the same user already has filesystem access to portfolios; adding token auth on a loopback API doesn't change that threat model. To expose the service to other hosts, put it behind your own auth layer (Tailscale, nginx + mTLS). |
+| **Container auto-initializes on boot** (`IC_INITIALIZE_ON_BOOT=1`) | The cold-cache cost on a 200+ position portfolio is 5–15 minutes; running setup → refresh → seed_ask at boot means agents see `init_state: ready` immediately on connect. Disable with `IC_INITIALIZE_ON_BOOT=0` if you want manual control. The init does not exfiltrate data — it just primes the engine's read-only cache against the providers you've configured. |
+| **API keys persist to `/data/keys.env` (mode 0600)** | Keys need to outlive container restarts. The named volume is `ic-engine-data`; on the host that's a docker volume root-owned but only readable by the container's `uid=1000(ic)`. To rotate or delete a key, use `portfolio_keys_set` / `portfolio_keys_delete` — both REST endpoints accept allowlisted names only, never logging values. |
+| **Portfolio summaries are sent to the configured narrative LLM provider** | This is the value prop: the engine produces a deterministic envelope, the narrator turns it into prose. To keep narratives local, point `INVESTORCLAW_NARRATIVE_ENDPOINT` at a local Ollama / llama-server / vLLM endpoint (set `INVESTORCLAW_NARRATIVE_PROVIDER=ollama`). To run keyless without any narrator, omit `TOGETHER_API_KEY` — the engine returns a stub catalog summary instead. See [`PRIVACY.md`](PRIVACY.md) for the full data-flow matrix. |
+| **Image pulled from `ghcr.io/argonautsystems/ic-engine`** | Pinned to a specific sha256 digest in `compose.yml`, not just the tag — guarantees reproducible builds even if the tag is later mutated. Verify the digest matches what your scanner expects before deploying. Container Apache 2.0 + bridge code MIT-0 in this repo; engine source at `argonautsystems/ic-engine` (pinned by SHA). |
+
+For vulnerability disclosure see [`SECURITY.md`](SECURITY.md). For the
+privacy model (what stays local vs what goes to which provider) see
+[`PRIVACY.md`](PRIVACY.md).
 
 ## Behavior contract
 

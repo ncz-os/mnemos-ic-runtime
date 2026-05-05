@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for Claude Code via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.29","runtime":"claude-code","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.30","runtime":"claude-code","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -184,8 +184,8 @@ lands well under $0.01.
   move money, place orders, or access brokerage accounts. If the user
   asks for any of those, decline and direct them to a licensed advisor.
 
-- **Local by default.** MCP endpoint is on `127.0.0.1:18090` (REST +
-  MCP); dashboard is on `127.0.0.1:18092`. If the user has deployed the
+- **Local by default.** MCP endpoint is on `localhost:18090` (REST +
+  MCP); dashboard is on `localhost:18092`. If the user has deployed the
   service to a remote host (Tailscale VM, cloud), the URLs change but
   the tool surface is identical — the user edits the manifest's MCP
   server URL.

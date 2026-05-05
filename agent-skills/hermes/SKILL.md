@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for Hermes via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.29","runtime":"hermes","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.30","runtime":"hermes","image":"ghcr.io/argonautsystems/ic-engine:4.1.25-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -72,8 +72,8 @@ What this means in practice for hermes users:
 hermes (host)
   │
   │  config.yaml mcp_servers:
-  │     investorclaw → http://127.0.0.1:18090/mcp
-  │     mnemos       → http://127.0.0.1:5002/mcp
+  │     investorclaw → http://localhost:18090/mcp
+  │     mnemos       → http://localhost:5002/mcp
   ▼
 Docker compose (~/.investorclaw/compose.yml)
   ├── mnemos-os/ic-engine:4.1.25-cpu       :8090   portfolio analysis MCP
@@ -211,8 +211,8 @@ but worth knowing):
   http://localhost:18092/portfolios/map.
 - **Educational only — never investment advice.** All outputs include
   the disclaimer envelope. Echo it when summarizing.
-- **MCP servers are local by default** at `http://127.0.0.1:18090/mcp`
-  and `http://127.0.0.1:5002/mcp`. Remote deployments (Tailscale,
+- **MCP servers are local by default** at `http://localhost:18090/mcp`
+  and `http://localhost:5002/mcp`. Remote deployments (Tailscale,
   cloud) just change the URLs — the tool surface is identical.
 - **No portfolio? No problem.** The LLM can talk about generic
   market questions via `investorclaw.portfolio_ask` even before a

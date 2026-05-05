@@ -13,9 +13,9 @@
 // Or apply servers individually:
 //
 //     openclaw mcp set --name investorclaw --transport http \
-//       --url http://127.0.0.1:18090/mcp
+//       --url http://localhost:18090/mcp
 //     openclaw mcp set --name mnemos --transport http \
-//       --url http://127.0.0.1:5002/mcp
+//       --url http://localhost:5002/mcp
 //
 // If openclaw runs in a container, replace 127.0.0.1 with
 // host.docker.internal (or the compose service names if openclaw
@@ -24,8 +24,8 @@
 {
   mcp: {
     servers: {
-      investorclaw: { transport: "http", url: "http://127.0.0.1:18090/mcp" },
-      mnemos:       { transport: "http", url: "http://127.0.0.1:5002/mcp" }
+      investorclaw: { transport: "http", url: "http://localhost:18090/mcp" },
+      mnemos:       { transport: "http", url: "http://localhost:5002/mcp" }
     }
   }
 }

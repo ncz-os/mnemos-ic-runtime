@@ -33,8 +33,8 @@ cd ~/.investorclaw && docker compose up -d
 Wait for the health endpoints to come up:
 
 ```bash
-curl -fsS http://127.0.0.1:18090/healthz   # investorclaw / ic-engine
-curl -fsS http://127.0.0.1:5002/healthz   # mnemos
+curl -fsS http://localhost:18090/healthz   # investorclaw / ic-engine
+curl -fsS http://localhost:5002/healthz   # mnemos
 ```
 
 Both should return `200 OK` within ~30 seconds on first start (the
@@ -49,12 +49,12 @@ Use the validated `openclaw mcp set` CLI. **Do not edit
 openclaw mcp set \
   --name investorclaw \
   --transport http \
-  --url http://127.0.0.1:18090/mcp
+  --url http://localhost:18090/mcp
 
 openclaw mcp set \
   --name mnemos \
   --transport http \
-  --url http://127.0.0.1:5002/mcp
+  --url http://localhost:5002/mcp
 ```
 
 Verify both are registered:

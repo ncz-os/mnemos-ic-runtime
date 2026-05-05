@@ -46,15 +46,15 @@ cd ~/.investorclaw && docker compose up -d
 ```
 
 This starts two containers: `mnemos-os/mnemos-rs:4.2` on
-`127.0.0.1:5002` (memory) and `mnemos-os/ic-engine:4.1.25-cpu` on
-`127.0.0.1:18090` (portfolio analysis). First boot pulls ~600 MB of
+`localhost:5002` (memory) and `mnemos-os/ic-engine:4.1.25-cpu` on
+`localhost:18090` (portfolio analysis). First boot pulls ~600 MB of
 images; subsequent boots are instant.
 
 Verify health:
 
 ```sh
-curl -fsS http://127.0.0.1:18090/healthz
-curl -fsS http://127.0.0.1:5002/healthz
+curl -fsS http://localhost:18090/healthz
+curl -fsS http://localhost:5002/healthz
 ```
 
 Both should return 200.

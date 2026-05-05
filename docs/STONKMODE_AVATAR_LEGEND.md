@@ -3,8 +3,9 @@ v4.x asset location: the 30 persona SVG avatars + Dr. Stonk PNG ship
 inside the ic-engine container at
 /opt/ic-engine/.venv/lib/python3.12/site-packages/ic_engine/assets/stonkmode-avatars/
 The dashboard at localhost:18092 renders them in the Stonkmode tab.
-The grid composite (assets/stonkmode-avatars-grid.png referenced below)
-is not currently bundled in v4.x — see the dashboard for live render.
+The grid composite (assets/stonkmode-avatars-grid.jpg shown below)
+ships with this doc; the dashboard at localhost:18092 also renders the
+30 individual SVGs live in the Stonkmode tab.
 -->
 
 # Stonkmode Avatar Grid Legend
@@ -15,7 +16,7 @@ is not currently bundled in v4.x — see the dashboard for live render.
 
 ## Grid Reference
 
-![Stonkmode Avatar Grid](assets/stonkmode-avatars-grid.png)
+![Stonkmode Avatar Grid](assets/stonkmode-avatars-grid.jpg)
 
 ---
 

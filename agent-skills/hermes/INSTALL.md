@@ -57,8 +57,8 @@ cd ~/.investorclaw && docker compose up -d
 Wait for both containers to report healthy:
 
 ```bash
-curl -fsS http://127.0.0.1:18090/healthz   # ic-engine
-curl -fsS http://127.0.0.1:5002/healthz   # mnemos-rs
+curl -fsS http://localhost:18090/healthz   # ic-engine
+curl -fsS http://localhost:5002/healthz   # mnemos-rs
 ```
 
 Both should return 200 with a JSON body. First pull may take a few
@@ -75,10 +75,10 @@ Open `~/.hermes/config.yaml` and merge in the contents of
 mcp_servers:
   investorclaw:
     transport: http
-    url: http://127.0.0.1:18090/mcp
+    url: http://localhost:18090/mcp
   mnemos:
     transport: http
-    url: http://127.0.0.1:5002/mcp
+    url: http://localhost:5002/mcp
 ```
 
 If you already have an `mcp_servers:` block, add the two new keys
@@ -104,8 +104,8 @@ Verify hermes sees the new servers:
 
 ```bash
 hermes mcp list
-# Expected: investorclaw  http  http://127.0.0.1:18090/mcp  connected
-#           mnemos        http  http://127.0.0.1:5002/mcp  connected
+# Expected: investorclaw  http  http://localhost:18090/mcp  connected
+#           mnemos        http  http://localhost:5002/mcp  connected
 ```
 
 (If your hermes build doesn't have `hermes mcp list`, the tools
@@ -148,8 +148,8 @@ tool natively.
 4. Confirm the service is up:
    `docker ps | grep -E 'ic-engine|mnemos'` should show two
    `Up` rows. If not, `cd ~/.investorclaw && docker compose up -d`.
-5. Confirm health: `curl -fsS http://127.0.0.1:18090/healthz` and
-   `curl -fsS http://127.0.0.1:5002/healthz` both 200.
+5. Confirm health: `curl -fsS http://localhost:18090/healthz` and
+   `curl -fsS http://localhost:5002/healthz` both 200.
 
 **Tools appear but `portfolio_ask` returns "no portfolio loaded".**
 Open <http://localhost:18092>, upload a broker CSV / XLS / PDF, then
