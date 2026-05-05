@@ -385,16 +385,25 @@ def _holdings_tab() -> str:
   <div class="kpi"><div class="kpi-label">Crypto</div><div class="kpi-value">${crypto_value:,.0f}</div></div>
 </div>"""
 
-    # Sector breakdown
+    # Sector breakdown — engine ships either {sector: weight_float} (current)
+    # or {sector: {weight_pct, value}} (legacy). Handle both.
+    def _sector_weight(info):
+        if isinstance(info, dict):
+            return float(info.get("weight_pct", 0) or 0)
+        try:
+            return float(info or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
     sectors = summary_doc.get("sector_weights", {}) or {}
     if sectors:
         sector_rows = []
-        for sec, info in sorted(sectors.items(), key=lambda kv: -float((kv[1] or {}).get("weight_pct", 0) or 0)):
+        for sec, info in sorted(sectors.items(), key=lambda kv: -_sector_weight(kv[1])):
             if isinstance(info, dict):
                 weight = float(info.get("weight_pct", 0) or 0)
                 value = float(info.get("value", 0) or 0)
             else:
-                weight = float(info or 0)
+                weight = _sector_weight(info)
                 value = total_value * weight / 100
             sector_rows.append(
                 f"<tr><td>{_h(sec)}</td>"
@@ -410,14 +419,26 @@ def _holdings_tab() -> str:
     else:
         sector_block = ""
 
-    # Accounts breakdown
+    # Accounts breakdown — defensive against engine returning floats or dicts.
+    def _acct_value(info):
+        if isinstance(info, dict):
+            try:
+                return float(info.get("value", 0) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+        try:
+            return float(info or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
     accounts = summary_doc.get("accounts", {}) or {}
     if accounts:
         acct_rows = []
-        for name, info in sorted(accounts.items(), key=lambda kv: -float((kv[1] or {}).get("value", 0) or 0)):
-            value = float((info or {}).get("value", 0) or 0)
-            ftype = _h(str((info or {}).get("financial_type", "—")))
-            classification = _h(str((info or {}).get("classification", "—")))
+        for name, info in sorted(accounts.items(), key=lambda kv: -_acct_value(kv[1])):
+            info_dict = info if isinstance(info, dict) else {}
+            value = _acct_value(info)
+            ftype = _h(str(info_dict.get("financial_type", "—")))
+            classification = _h(str(info_dict.get("classification", "—")))
             acct_rows.append(
                 f"<tr><td>{_h(name)}</td>"
                 f'<td>{ftype}</td>'
