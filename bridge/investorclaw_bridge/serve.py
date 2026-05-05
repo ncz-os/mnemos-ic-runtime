@@ -63,7 +63,7 @@ def main() -> int:
     # errors get logged with structlog).
     try:
         from fastapi import FastAPI
-        from fastapi.responses import JSONResponse
+        from fastapi.responses import HTMLResponse, JSONResponse
         from fastapi.staticfiles import StaticFiles
         import uvicorn
     except ImportError as e:
@@ -162,6 +162,148 @@ def main() -> int:
         dashboard_app.mount(
             "/static", StaticFiles(directory=dashboard_dir, html=True), name="dashboard"
         )
+
+    # Mount /reports → /data/reports so users can browse generated EOD HTML
+    # files, JSON snapshots, etc. directly via http://localhost:18092/reports/
+    # The reports dir is the bind-mounted ./reports/ on the host.
+    reports_dir = os.environ.get("IC_REPORTS_DIR", "/data/reports")
+    if os.path.isdir(reports_dir):
+        dashboard_app.mount(
+            "/reports",
+            StaticFiles(directory=reports_dir, html=True),
+            name="reports",
+        )
+
+    # Landing page at / — lists today's EOD report (if any), portfolio status,
+    # and links into the reports archive. Replaces the prior 405 Method Not
+    # Allowed at GET /.
+    @dashboard_app.get("/", response_class=HTMLResponse)
+    async def dashboard_landing() -> HTMLResponse:
+        from .mcp.tools import get_init_state as _get_init_state
+        import datetime as _dt
+        import glob as _glob
+
+        snap = _get_init_state()
+        today = _dt.date.today().isoformat()
+        eod_today_html = f"/reports/eod_report_{today.replace('-', '')}.html"
+        eod_today_path = os.path.join(reports_dir, f"eod_report_{today.replace('-', '')}.html")
+        has_today_eod = os.path.isfile(eod_today_path)
+
+        # Recent EOD reports (newest first)
+        recent_html = []
+        if os.path.isdir(reports_dir):
+            for path in sorted(
+                _glob.glob(os.path.join(reports_dir, "eod_report_*.html")),
+                reverse=True,
+            )[:14]:
+                fname = os.path.basename(path)
+                size_kb = os.path.getsize(path) / 1024
+                mtime = _dt.datetime.fromtimestamp(os.path.getmtime(path)).strftime(
+                    "%Y-%m-%d %H:%M"
+                )
+                recent_html.append(
+                    f'<li><a href="/reports/{fname}">{fname}</a> '
+                    f'<span class="muted">— {size_kb:.0f} KB · {mtime}</span></li>'
+                )
+
+        recent_block = (
+            "<ul>" + "\n".join(recent_html) + "</ul>"
+            if recent_html
+            else '<p class="muted">No EOD reports generated yet. '
+            'Run <code>investorclaw eod-report --run</code> in the container.</p>'
+        )
+
+        today_card = (
+            f'<a href="{eod_today_html}" class="primary">Open today\'s EOD report ({today})</a>'
+            if has_today_eod
+            else f'<p class="muted">No EOD report for {today} yet.</p>'
+        )
+
+        body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>InvestorClaw — Dashboard</title>
+<style>
+:root {{ color-scheme: dark light; }}
+body {{
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  margin: 0; padding: 32px; max-width: 880px;
+  background: #0d1117; color: #c9d1d9;
+}}
+@media (prefers-color-scheme: light) {{
+  body {{ background: #fafbfc; color: #24292f; }}
+}}
+h1 {{ margin: 0 0 4px; font-size: 28px; }}
+h2 {{ margin: 32px 0 12px; font-size: 18px; border-bottom: 1px solid #30363d; padding-bottom: 6px; }}
+.muted {{ color: #8b949e; font-size: 13px; }}
+a {{ color: #58a6ff; text-decoration: none; }}
+a:hover {{ text-decoration: underline; }}
+a.primary {{
+  display: inline-block; background: #238636; color: #fff;
+  padding: 10px 18px; border-radius: 6px; font-weight: 600;
+  margin: 8px 0;
+}}
+a.primary:hover {{ background: #2ea043; text-decoration: none; }}
+code {{
+  background: #161b22; padding: 2px 6px; border-radius: 3px;
+  font-size: 12px; color: #c9d1d9;
+}}
+ul {{ list-style: none; padding: 0; }}
+li {{ padding: 6px 0; border-bottom: 1px solid #21262d; }}
+.kpi-grid {{
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px; margin: 12px 0;
+}}
+.kpi {{
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 14px;
+}}
+.kpi-label {{ color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }}
+.kpi-value {{ color: #c9d1d9; font-size: 18px; font-weight: 600; margin-top: 4px; }}
+.footer {{ margin-top: 48px; color: #8b949e; font-size: 12px; }}
+</style>
+</head>
+<body>
+
+<h1>InvestorClaw</h1>
+<p class="muted">Deterministic-first portfolio analysis · Educational use only</p>
+
+<h2>Status</h2>
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-label">Engine</div><div class="kpi-value">{snap['state']}</div></div>
+  <div class="kpi"><div class="kpi-label">Init ready</div><div class="kpi-value">{'yes' if snap['ready'] else 'no'}</div></div>
+  <div class="kpi"><div class="kpi-label">MCP endpoint</div><div class="kpi-value"><code>:18090/mcp</code></div></div>
+  <div class="kpi"><div class="kpi-label">REST</div><div class="kpi-value"><code>:18090/api/portfolio/</code></div></div>
+</div>
+
+<h2>Today's EOD report</h2>
+{today_card}
+
+<h2>Recent EOD reports</h2>
+{recent_block}
+
+<h2>API</h2>
+<ul>
+  <li><a href="/healthz">/healthz</a> <span class="muted">— liveness + init state JSON</span></li>
+  <li><a href="/api/version">/api/version</a> <span class="muted">— bridge version JSON</span></li>
+  <li><a href="/reports/">/reports/</a> <span class="muted">— browse reports directory (HTML + JSON snapshots)</span></li>
+  <li><code>POST /api/portfolio/ask</code> <span class="muted">— natural-language portfolio query</span></li>
+  <li><code>POST /api/portfolio/holdings</code> <span class="muted">— holdings snapshot</span></li>
+  <li><code>POST /api/portfolio/refresh</code> <span class="muted">— force fresh data pull</span></li>
+  <li><code>POST /api/portfolio/keys_set</code> <span class="muted">— configure provider keys</span></li>
+</ul>
+
+<div class="footer">
+  InvestorClaw v4.x · <a href="https://github.com/mnemos-os/mnemos-ic-runtime">GitHub</a>
+  · <a href="https://github.com/argonautsystems/InvestorClaw">Project home</a>
+  · Educational only — not investment advice.
+</div>
+
+</body>
+</html>"""
+        return HTMLResponse(content=body)
 
     # ── Build the MCP-HTTP app ────────────────────────────────────────
     # FastMCP exposes its own ASGI app via streamable_http_app(), but the

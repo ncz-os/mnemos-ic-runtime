@@ -372,12 +372,18 @@ async def setup_status() -> JSONResponse:
     })
 
 
-def attach_to(app) -> None:
-    """Wire the setup router onto a FastAPI app, plus the explicit form handler."""
+def attach_to(app, register_root_redirect: bool = False) -> None:
+    """Wire the setup router onto a FastAPI app, plus the explicit form handler.
+
+    When ``register_root_redirect`` is True the legacy `/` → `/setup` 303
+    redirect is added. The dashboard landing page (added in v4.1.32) renders
+    a real `/` route, so callers should leave this False unless they have no
+    other root handler. Default: False.
+    """
     # Override the router's POST /setup/keys with the explicit form-param version
     app.post("/setup/keys", response_class=HTMLResponse)(save_keys_explicit)
     app.include_router(router)
-    # Also expose root convenience: redirect / → /setup if no static dashboard mounted
-    @app.get("/", include_in_schema=False)
-    async def root_redirect() -> RedirectResponse:
-        return RedirectResponse(url="/setup", status_code=303)
+    if register_root_redirect:
+        @app.get("/", include_in_schema=False)
+        async def root_redirect() -> RedirectResponse:
+            return RedirectResponse(url="/setup", status_code=303)
