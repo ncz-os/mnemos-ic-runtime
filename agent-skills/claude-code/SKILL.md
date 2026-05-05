@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for Claude Code via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.33","runtime":"claude-code","image":"ghcr.io/argonautsystems/ic-engine:4.1.33-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.34","runtime":"claude-code","image":"ghcr.io/argonautsystems/ic-engine:4.1.34-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -202,6 +202,23 @@ Docker containers aren't running. Tell the user:
    wait ~10 seconds for health checks, then retry
 
 See INSTALL.md for the full bring-up sequence.
+
+## Install
+
+**Claude Code (while Anthropic marketplace acceptance is pending):**
+
+```
+/plugin marketplace add https://gitlab.com/argonautsystems/InvestorClaude.git
+/plugin install investorclaw@investorclaude
+```
+
+The Anthropic Claude Code marketplace listing is pending acceptance. Once accepted, it will be the one-click install path.
+
+**OpenClaw / ZeroClaw / Hermes users:** install via ClawHub:
+
+```bash
+clawhub install perlowja/investorclaw
+```
 
 ## What this plugin does NOT do
 

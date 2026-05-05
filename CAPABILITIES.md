@@ -457,6 +457,70 @@ Used for:
 - Risk-free rate (Sharpe ratio calculations)
 - Macroeconomic context (recession risk, inflation expectations)
 
+## Dashboard Portal
+
+InvestorClaw v4.x ships a web-based dashboard portal at
+`http://localhost:18092`. It is the human-facing surface, separate
+from the MCP-HTTP agent surface on port 18090.
+
+### 17 tabs
+
+| Tab | What it shows |
+|---|---|
+| **Overview** | Portfolio summary card + Regenerate sweep button |
+| **Holdings** | Positions, values, weights, account breakdown |
+| **Performance** | Returns, Sharpe, Sortino, max drawdown, beta, VaR |
+| **WhatChanged** | Delta snapshot vs. prior run |
+| **Scenarios** | Rate-shock, drawdown, and correlation-break what-if |
+| **Bonds** | YTM, duration, convexity, FRED yield-curve overlay |
+| **Optimize** | MPT: Sharpe-max, min-vol, target-return frontiers |
+| **Cashflow** | Projected dividends and bond coupons |
+| **Peer** | Peer and benchmark comparison |
+| **Analyst** | Analyst consensus ratings per holding |
+| **News** | News correlation for held positions |
+| **Markets** | Market-wide news and macro data |
+| **Lookup** | Ticker / account lookup |
+| **Synthesis** | LLM-synthesized portfolio narrative |
+| **Reports** | Browse and download EOD and advisor reports |
+| **Settings** | API keys, portfolio upload form, preferences |
+| **About** | Version, license, attribution |
+
+All 30 natural-language queries in the agentic COBOL test suite map
+to one of these 17 tabs — coverage is complete.
+
+### Regenerate button
+
+The **Regenerate** button on the Overview tab fires a full background
+sweep: `setup → refresh → 12 section analyzers`. Use it to rebuild the
+entire cache after uploading a new portfolio or at the start of a session.
+
+### Portfolio file upload
+
+The Settings tab includes a web upload form that accepts `.csv`,
+`.tsv`, `.xls`, `.xlsx`, `.pdf`, `.json`, `.ofx`, and `.qfx` files.
+The form sanitizes the filename, writes the file to `/data/portfolios/`
+inside the container, and queues a refresh automatically. This is the
+simplest path for non-technical users.
+
+### API key configuration
+
+All 8 provider keys are configurable via the Settings tab without a
+shell or container restart:
+
+| Key | Provider |
+|---|---|
+| `TOGETHER_API_KEY` | Together AI (narrative synthesis) |
+| `OPENAI_API_KEY` | OpenAI (alternative narrative provider) |
+| `FINNHUB_KEY` | Finnhub (real-time quotes + analyst ratings) |
+| `FRED_API_KEY` | FRED (Treasury yields + macro indicators) |
+| `NEWSAPI_KEY` | NewsAPI (per-symbol + market news) |
+| `ALPHA_VANTAGE_KEY` | Alpha Vantage (quote fallback) |
+| `MASSIVE_API_KEY` | Polygon via Massive (high-scale, 200+ symbols) |
+| `MARKETAUX_API_KEY` | MarketAux (alternative news source) |
+
+Keys can also be set via the `portfolio_keys_set` MCP tool from your
+agent.
+
 ## Configuration and Deployment
 
 ### API Key Management

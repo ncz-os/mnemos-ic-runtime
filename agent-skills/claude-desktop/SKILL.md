@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for Claude Desktop via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.33","runtime":"claude-desktop","image":"ghcr.io/argonautsystems/ic-engine:4.1.33-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.34","runtime":"claude-desktop","image":"ghcr.io/argonautsystems/ic-engine:4.1.34-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -138,6 +138,27 @@ safety check.
 - Does not connect directly to broker accounts (you upload CSV / XLS / PDF)
 - Does not require an internet connection for portfolio math (only for
   market-data refresh, which gracefully degrades without API keys)
+
+## Install
+
+Claude Desktop connects to InvestorClaw via MCP servers — there is no plugin to install from a marketplace. The service runs locally via Docker Compose.
+
+**Start the service:**
+
+```bash
+git clone https://github.com/mnemos-os/mnemos-ic-runtime.git ~/.investorclaw
+cd ~/.investorclaw
+mkdir -p portfolios
+docker compose up -d
+```
+
+Then add the MCP server blocks to `claude_desktop_config.json` and restart Claude Desktop. See `INSTALL.md` in this directory for the exact config snippet.
+
+**OpenClaw / ZeroClaw / Hermes users:** install via ClawHub:
+
+```bash
+clawhub install perlowja/investorclaw
+```
 
 ## Where to go next
 

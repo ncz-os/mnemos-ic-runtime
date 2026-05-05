@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for OpenClaw via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.33","runtime":"openclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.33-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.34","runtime":"openclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.34-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -185,6 +185,23 @@ MCP support handles the rest.
 - Does not give investment advice
 - Does not access user accounts or move funds
 - Educational outputs only
+
+## Install
+
+**OpenClaw / ZeroClaw / Hermes (ClawHub):**
+
+```bash
+clawhub install perlowja/investorclaw
+```
+
+**Claude Code (while Anthropic marketplace acceptance is pending):**
+
+```
+/plugin marketplace add https://gitlab.com/argonautsystems/InvestorClaude.git
+/plugin install investorclaw@investorclaude
+```
+
+See `INSTALL.md` in this directory for manual install steps.
 
 ## Reporting issues
 

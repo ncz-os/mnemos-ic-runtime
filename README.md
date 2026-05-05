@@ -8,7 +8,7 @@
 
 Portfolio analysis and market intelligence for any MCP-capable agent.
 
-v4.1.x | Apache 2.0 + MIT-0 | Educational Use Only
+v4.1.34 | Apache 2.0 + MIT-0 | Educational Use Only
 
 InvestorClaw v4.x is a containerized portfolio analyzer that runs as a
 Docker Compose stack and exposes its tools over MCP-HTTP at
@@ -43,6 +43,29 @@ HMAC-signed envelope answer; it does not guess financial metrics.
   cable-finance personalities (Dr. Stonk, Mission Control, 30+ personas)
 - Educational guardrails; no investment advice
 
+## Install
+
+### OpenClaw / ZeroClaw / Hermes (ClawHub)
+
+```bash
+clawhub install perlowja/investorclaw
+```
+
+ClawHub handles the Docker Compose pull, MCP server registration, and
+port wiring automatically.
+
+### Claude Code (while Anthropic marketplace acceptance is pending)
+
+```
+/plugin marketplace add https://gitlab.com/argonautsystems/InvestorClaude.git
+/plugin install investorclaw@investorclaude
+```
+
+The Anthropic Claude Code marketplace listing is pending acceptance.
+Once accepted, it will be the canonical one-click install path.
+
+### Manual (Docker Compose, any agent)
+
 ## Quick Start
 
 ```bash
@@ -53,7 +76,7 @@ docker compose up -d    # uses the bundled compose.yml
 ```
 
 That's it. The compose pulls
-`ghcr.io/argonautsystems/ic-engine:4.1.33-cpu` (publicly hosted, no
+`ghcr.io/argonautsystems/ic-engine:4.1.34-cpu` (publicly hosted, no
 auth) and runs it on `localhost:18090` (MCP + REST) and
 `localhost:18092` (dashboard).
 
@@ -137,7 +160,7 @@ have moved:
 Refresh my portfolio.
 ```
 
-## Available MCP Tools (12 Total)
+## Available MCP Tools (13 Total)
 
 | Tool | Purpose |
 |---|---|
@@ -154,9 +177,71 @@ Refresh my portfolio.
 | `portfolio_response_list` | List recent stored responses |
 | `portfolio_response_delete` | Permanently delete a stored response |
 
-All 12 tools also have plain-HTTP REST endpoints at
+All 13 tools also have plain-HTTP REST endpoints at
 `http://127.0.0.1:18090/api/portfolio/*` — useful when MCP integration
 is flaky or you want to drive the engine from a shell.
+
+## Dashboard / Web Portal
+
+The dashboard runs at `http://localhost:18092` and is the human-facing
+surface — separate from the MCP-HTTP agent surface at port 18090.
+
+### 17 tabs
+
+| Tab | What it shows |
+|---|---|
+| **Overview** | Portfolio summary + Regenerate sweep button |
+| **Holdings** | Positions, values, weights, accounts |
+| **Performance** | Returns, Sharpe, Sortino, max drawdown, beta, VaR |
+| **WhatChanged** | Delta snapshot vs. prior run |
+| **Scenarios** | Rate-shock, drawdown, and correlation-break what-if |
+| **Bonds** | YTM, duration, convexity, FRED yield-curve overlay |
+| **Optimize** | MPT: Sharpe-max, min-vol, target-return frontiers |
+| **Cashflow** | Projected dividends and bond coupons |
+| **Peer** | Peer and benchmark comparison |
+| **Analyst** | Analyst consensus ratings per holding |
+| **News** | News correlation for held positions |
+| **Markets** | Market-wide news and macro data |
+| **Lookup** | Ticker / account lookup |
+| **Synthesis** | LLM-synthesized portfolio narrative |
+| **Reports** | Browse and download EOD and advisor reports |
+| **Settings** | API keys, portfolio upload form, preferences |
+| **About** | Version, license, attribution |
+
+All 30 natural-language queries in the agentic COBOL test suite map to
+one of these 17 tabs — the tab coverage is complete.
+
+### Regenerate button
+
+The **Regenerate** button on the Overview tab fires a background sweep:
+`setup → refresh → 12 section analyzers`. Use it to rebuild the full
+cache after uploading a new portfolio or at the start of a session.
+
+### Portfolio file upload
+
+The Settings tab has a web upload form that accepts `.csv`, `.tsv`,
+`.xls`, `.xlsx`, `.pdf`, `.json`, `.ofx`, and `.qfx` files. The form
+sanitizes the filename, writes the file to `/data/portfolios/` inside
+the container, and queues a refresh automatically.
+
+### API key configuration
+
+All 8 provider keys are configurable via the Settings tab form (no
+shell or container restart required):
+
+| Key | Provider | Purpose |
+|---|---|---|
+| `TOGETHER_API_KEY` | Together AI | Narrative synthesis (required for prose output) |
+| `OPENAI_API_KEY` | OpenAI | Alternative narrative provider |
+| `FINNHUB_KEY` | Finnhub | Real-time quotes + analyst ratings |
+| `FRED_API_KEY` | FRED | Treasury yields + economic indicators |
+| `NEWSAPI_KEY` | NewsAPI | Per-symbol + market-wide news |
+| `ALPHA_VANTAGE_KEY` | Alpha Vantage | Quote fallback |
+| `MASSIVE_API_KEY` | Polygon (via Massive) | High-scale quote coverage (200+ symbols) |
+| `MARKETAUX_API_KEY` | MarketAux | Alternative news source |
+
+Keys can also be set via the `portfolio_keys_set` MCP tool from your
+agent without opening the dashboard.
 
 ## Power-User Endpoints
 
@@ -172,9 +257,7 @@ but are available for power users:
 | `POST /api/portfolio/keys_set` | Set provider keys without restart |
 
 The `dashboard` at `localhost:18092` is a single-page HTML UI with
-tabs for Holdings · Performance · Bonds · Analyst · News · Cashflow ·
-Optimize · Synthesis · What-changed · Tax · Scenarios · Peer · Reports
-· Settings · About.
+tabs for Overview · Holdings · Performance · WhatChanged · Scenarios · Bonds · Optimize · Cashflow · Peer · Analyst · News · Markets · Lookup · Synthesis · Reports · Settings · About.
 
 ## Recommended Model Combinations
 
@@ -273,7 +356,7 @@ See [PRIVACY.md](PRIVACY.md) for the full data-handling policy and
 ## Documentation
 
 - [SKILL.md](SKILL.md) — agent-readable install + usage spec, full
-  12-tool catalog, first-run timeline, REST endpoints, troubleshooting
+  13-tool catalog, first-run timeline, REST endpoints, troubleshooting
 - [PRIVACY.md](PRIVACY.md) — full data-handling policy
 - [DISCLAIMER.md](DISCLAIMER.md) — educational-use disclaimer + provider
   data flows
@@ -297,7 +380,7 @@ See [PRIVACY.md](PRIVACY.md) for the full data-handling policy and
   30-persona avatar reference
 - [docs/EOD_REPORT.md](docs/EOD_REPORT.md) — end-of-day report feature walkthrough (what is in the report, how to generate, performance, optional email delivery)
 - [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) —
-  detailed per-tool reference for all 12 MCP tools (input / output
+  detailed per-tool reference for all 13 MCP tools (input / output
   schemas, latency, cache TTLs, allowlists, examples)
 - [docs/references/](docs/references/) — input / output / schema /
   consultative-LLM contracts (`contract-input.md`, `contract-output.md`,

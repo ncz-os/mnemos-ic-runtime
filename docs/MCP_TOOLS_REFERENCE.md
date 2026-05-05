@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Detailed per-tool reference for the 12 MCP tools that ic-engine exposes
+Detailed per-tool reference for the 13 MCP tools that ic-engine exposes
 on `localhost:18090/mcp`. For the high-level "what can it do" overview,
 see [`CAPABILITIES.md`](../CAPABILITIES.md). For the agent-readable
 install / first-run / cookbook spec, see [`SKILL.md`](../SKILL.md).
@@ -28,6 +28,7 @@ shell.
 | [`portfolio_response_get`](#portfolio_response_get) | Retrieve a stored response by run_id | (new in v4.x) |
 | [`portfolio_response_list`](#portfolio_response_list) | List recent stored responses | (new in v4.x) |
 | [`portfolio_response_delete`](#portfolio_response_delete) | Permanently delete a stored response | (new in v4.x) |
+| [`portfolio_response_flag_bad`](#portfolio_response_flag_bad) | Flag a stored response as bad without deleting it | (new in v4.x) |
 
 ---
 
@@ -451,6 +452,31 @@ generated and you don't want it polluting future audits.
 
 ```json
 { "deleted": "299d36b0-...", "ok": true }
+```
+
+---
+
+## `portfolio_response_flag_bad`
+
+Tag a stored response as bad without permanently deleting it. The
+response stays in the history for audit and analysis, but is marked
+with `"flagged_bad": true` in `portfolio_response_list` output.
+
+Use this when a response was clearly wrong but you want to keep it for
+debugging — for example, if the narrator fabricated a number or the
+engine returned stale data. Use `portfolio_response_delete` instead
+when you want the response gone entirely.
+
+### Input
+
+```json
+{ "run_id": "299d36b0-..." }
+```
+
+### Output
+
+```json
+{ "run_id": "299d36b0-...", "flagged_bad": true, "ok": true }
 ```
 
 ---

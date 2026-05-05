@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for ZeroClaw via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.33","runtime":"zeroclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.33-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.34","runtime":"zeroclaw","image":"ghcr.io/argonautsystems/ic-engine:4.1.34-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -46,10 +46,23 @@ agent startup. No skill code, no shell-out, no per-tool wiring.
 The two services run as a Docker compose stack, bound to localhost:
 
 - `mnemos-os/mnemos-rs:4.2` → `localhost:5002`
-- `mnemos-os/ic-engine:4.1.33-cpu` → `localhost:18090`
+- `mnemos-os/ic-engine:4.1.34-cpu` → `localhost:18090`
+
+**Quick install via ClawHub:**
+
+```bash
+clawhub install perlowja/investorclaw
+```
+
+**Claude Code (while Anthropic marketplace acceptance is pending):**
+
+```
+/plugin marketplace add https://gitlab.com/argonautsystems/InvestorClaude.git
+/plugin install investorclaw@investorclaude
+```
 
 If the user has not installed yet, see `INSTALL.md` in this skill
-directory for ordered setup. zeroclaw cannot install the service from
+directory for full manual setup details. zeroclaw cannot install the service from
 inside a skill (audit rules forbid scripted execution from skill
 payload), but the future `zeroclaw services install <compose-url>`
 upstream subcommand will close that gap with a single command.

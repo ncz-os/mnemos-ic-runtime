@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer for Hermes via MCP-HTTP at localhost:18090. Holdings, performance, Sharpe + Sortino, FRED yields, bond duration, scenario rebalancing.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.33","runtime":"hermes","image":"ghcr.io/argonautsystems/ic-engine:4.1.33-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
+metadata: {"license":"MIT-0","version":"4.1.34","runtime":"hermes","image":"ghcr.io/argonautsystems/ic-engine:4.1.34-cpu","mcp-endpoint":"http://localhost:18090/mcp"}
 ---
 
 <!--
@@ -76,7 +76,7 @@ hermes (host)
   │     mnemos       → http://localhost:5002/mcp
   ▼
 Docker compose (~/.investorclaw/compose.yml)
-  ├── mnemos-os/ic-engine:4.1.33-cpu       :8090   portfolio analysis MCP
+  ├── mnemos-os/ic-engine:4.1.34-cpu       :8090   portfolio analysis MCP
   └── mnemos-os/mnemos-rs:4.2       :5002   memory + KG MCP
        (dashboard at :8092 for portfolio upload + key config)
 ```
@@ -219,6 +219,19 @@ but worth knowing):
   portfolio file is uploaded; it'll guide the user to the dashboard.
 
 ## Install pointer
+
+**Quick install via ClawHub:**
+
+```bash
+clawhub install perlowja/investorclaw
+```
+
+**Claude Code (while Anthropic marketplace acceptance is pending):**
+
+```
+/plugin marketplace add https://gitlab.com/argonautsystems/InvestorClaude.git
+/plugin install investorclaw@investorclaude
+```
 
 See `INSTALL.md` next to this file for the full hermes 0.12+ install
 flow (skill drop, compose up, config.yaml MCP block, restart).
