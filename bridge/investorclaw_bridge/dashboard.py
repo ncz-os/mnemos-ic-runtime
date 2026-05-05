@@ -86,6 +86,22 @@ def _load_json(filename: str) -> Dict[str, Any]:
         return {}
 
 
+def _coerce_position_count(value) -> int:
+    """position_count can be a scalar (older engine) or a dict-by-asset-class
+    (current engine writes ``{'equity': 215, 'bond': 38, 'cash': 16, ...}``).
+    Sum the dict values; fall back to 0 if neither shape applies.
+    """
+    if isinstance(value, dict):
+        try:
+            return sum(int(v or 0) for v in value.values())
+        except (TypeError, ValueError):
+            return 0
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _shell(active_slug: str, body: str, title: str = "InvestorClaw") -> str:
     """Wrap content in the standard dashboard shell with tab navigation."""
     nav_items = []
@@ -274,7 +290,7 @@ def _overview(get_init_state, message: str = "") -> str:
     equity_value = float(summary.get("equity_value", 0) or 0)
     bond_value = float(summary.get("bond_value", 0) or 0)
     cash_value = float(summary.get("cash_value", 0) or 0)
-    position_count = int(summary.get("position_count", 0) or 0)
+    position_count = _coerce_position_count(summary.get("position_count", 0))
 
     today_card = (
         f'<a href="/reports/eod_report_{today_compact}.html" class="primary">'
@@ -352,7 +368,7 @@ def _holdings_tab() -> str:
     bond_value = float(summary.get("bond_value", 0) or 0)
     cash_value = float(summary.get("cash_value", 0) or 0)
     crypto_value = float(summary.get("crypto_value", 0) or 0)
-    position_count = int(summary.get("position_count", 0) or 0)
+    position_count = _coerce_position_count(summary.get("position_count", 0))
     ugl = float(summary.get("unrealized_gl", 0) or 0)
     ugl_pct = float(summary.get("unrealized_gl_pct", 0) or 0)
     ugl_color = "kpi-positive" if ugl >= 0 else "kpi-negative"
