@@ -9,6 +9,44 @@ Distribution-edge artifacts (`SKILL.md`, `compose.yml`, `install.yaml`,
 `agent-skills/**`) are MIT-0; substantive code (bridge, dashboard,
 Dockerfile, tests) is Apache 2.0.
 
+## [4.1.28] — 2026-05-04
+
+### Added
+
+- **Feature docs ported** from v2.6 git history (deleted in v4.0
+  nuke-from-orbit trim):
+  - `STONKMODE.md` (top-level) — full feature doc for narrated
+    commentary mode with 30+ fictional cable-finance personas
+  - `CAPABILITIES.md` (top-level) — master "what can it do" feature
+    catalog covering holdings, performance, bonds, news, allocation,
+    optimization, scenarios, peer analysis (~19 KB)
+  - `docs/GLOSSARY.md` — financial-terminology reference (Sharpe,
+    Sortino, YTM, duration, beta, drawdown, etc.)
+  - `docs/PHILOSOPHY.md` — the "deterministic-first, no LLM math"
+    rationale
+  - `docs/WINDOWS_SETUP_GUIDE.md` — Windows + WSL2 install gotchas
+  - `docs/STONKMODE_ARCHITECTURE.md` — full Stonkmode pipeline
+    (market detection → archetype weighting → pair selection →
+    narration → dashboard render)
+  - `docs/STONKMODE_AVATAR_LEGEND.md` — 30-persona avatar grid
+    reference
+- All ported docs include a `<!-- v4.x adaptation note -->` header
+  explaining what changed between v2.x slash-command surface and
+  v4.x MCP-tool surface (numerical results, methodology, and
+  data-source rules unchanged).
+
+### Changed
+
+- **Auto-start install convention added to SKILL.md.** When a
+  skills installer (e.g. `openclaw skills install investorclaw`)
+  places the bundle, agents should immediately run
+  `mkdir -p portfolios && docker compose up -d` from the skill
+  directory as part of completing the install — the user invoked the
+  install command and has implicitly consented to it completing.
+  Do not gate a second time on "Want me to boot it up?" Override
+  cases (CI runner, existing ic-engine container with different tag,
+  user-supplied `--dry-run`) are documented inline.
+
 ## [4.1.27] — 2026-05-04
 
 ### Added

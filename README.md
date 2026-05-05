@@ -280,6 +280,21 @@ See [PRIVACY.md](PRIVACY.md) for the full data-handling policy and
 - [SECURITY.md](SECURITY.md) — vulnerability disclosure
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution workflow
 - [CHANGELOG.md](CHANGELOG.md) — release history
+- [CAPABILITIES.md](CAPABILITIES.md) — full feature catalog (the
+  master "what can it do" doc)
+- [STONKMODE.md](STONKMODE.md) — narrated commentary mode + 30
+  fictional cable-finance personas
+- [docs/GLOSSARY.md](docs/GLOSSARY.md) — financial terminology
+  reference (Sharpe, Sortino, YTM, duration, etc.)
+- [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) — "deterministic-first,
+  no LLM math" rationale
+- [docs/WINDOWS_SETUP_GUIDE.md](docs/WINDOWS_SETUP_GUIDE.md) —
+  Windows + WSL2 install gotchas
+- [docs/STONKMODE_ARCHITECTURE.md](docs/STONKMODE_ARCHITECTURE.md) —
+  Stonkmode pipeline (market detection → archetype weighting → pair
+  selection → narration)
+- [docs/STONKMODE_AVATAR_LEGEND.md](docs/STONKMODE_AVATAR_LEGEND.md) —
+  30-persona avatar reference
 - [docs/INSTALL_MODELS.md](docs/INSTALL_MODELS.md) — *why* the v4.x
   architecture splits along two install models
 - [docs/COBOL_TESTING.md](docs/COBOL_TESTING.md) — the Agentic COBOL
