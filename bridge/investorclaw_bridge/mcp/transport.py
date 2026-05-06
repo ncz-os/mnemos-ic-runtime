@@ -141,6 +141,16 @@ class KeysDeleteBody(_BaseModel):
     name: str
 
 
+class KeysRecommendBody(_BaseModel):
+    """Optional explicit portfolio path for size-aware key recommendation.
+
+    When omitted, the bridge picks the most-recently-modified CSV under
+    /data/portfolios. Provide an explicit `portfolio_path` only when
+    asking about a non-active portfolio (e.g. comparing two CSVs).
+    """
+    portfolio_path: str = ""
+
+
 class ResponseGetBody(_BaseModel):
     """Lookup by run_id (serial number)."""
     run_id: str
@@ -252,6 +262,22 @@ def register_rest_routes(app: Any) -> None:
     async def rest_keys_delete(body: KeysDeleteBody = Body(...)) -> dict[str, Any]:
         """Delete a single configured key by name. Allowlisted names only."""
         return await TOOL_REGISTRY["portfolio_keys_delete"]["handler"](body.name)
+
+    @app.post("/api/portfolio/keys_recommend")
+    async def rest_keys_recommend(
+        body: KeysRecommendBody = Body(default_factory=KeysRecommendBody),
+    ) -> dict[str, Any]:
+        """Size-aware API key recommendations for the active portfolio.
+
+        Returns per-key priority (`strongly_recommended` /
+        `recommended` / `optional`) + rationale + signup_url +
+        whether each key is currently configured. The dashboard
+        Settings tab and the agent setup-orchestrator surface this
+        so users with large portfolios are told upfront they should
+        configure MASSIVE_API_KEY.
+        """
+        portfolio_path = body.portfolio_path or None
+        return await TOOL_REGISTRY["portfolio_keys_recommend"]["handler"](portfolio_path)
 
     # Convenience: a GET alias on /api/portfolio/keys/status for browser/dev
     # use. The canonical path remains /api/portfolio/keys_status to match

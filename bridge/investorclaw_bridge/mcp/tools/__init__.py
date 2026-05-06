@@ -29,6 +29,7 @@ from .keys import (
     portfolio_keys_status,
     portfolio_keys_set,
     portfolio_keys_delete,
+    portfolio_keys_recommend,
 )
 from .responses import (
     RESPONSE_TOOLS,
@@ -76,6 +77,7 @@ __all__ = [
     "portfolio_keys_status",
     "portfolio_keys_set",
     "portfolio_keys_delete",
+    "portfolio_keys_recommend",
     "portfolio_response_get",
     "portfolio_response_list",
     "portfolio_response_delete",

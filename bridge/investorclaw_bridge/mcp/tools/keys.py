@@ -172,6 +172,187 @@ async def portfolio_keys_set(keys: dict[str, str]) -> dict[str, Any]:
     }
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Size-aware key recommendation (#44) — surface "you should set
+# MASSIVE_API_KEY at this portfolio size" guidance to the agent / dashboard
+# so users with large portfolios aren't surprised by yfinance throttling.
+# ──────────────────────────────────────────────────────────────────────
+
+# Threshold above which yfinance free-tier throttling becomes a real
+# problem (rate-limits at ~50 symbols, blocks at ~100 in a single batch).
+# Bumping these triggers a STRONG recommend for MASSIVE_API_KEY.
+_LARGE_PORTFOLIO_THRESHOLD = 50    # >50 holdings → strong-recommend
+_HUGE_PORTFOLIO_THRESHOLD = 100    # >100 → strong-recommend everywhere
+
+
+def _count_portfolio_holdings(portfolio_path: str) -> int | None:
+    """Count rows in a portfolio CSV (excluding header).
+
+    Returns None if the file doesn't exist or can't be parsed. Falls back
+    to None on any read error rather than raising — this is advisory data
+    for the recommend endpoint, not a hard requirement.
+    """
+    from pathlib import Path
+    p = Path(portfolio_path)
+    if not p.exists():
+        return None
+    try:
+        # Try multiple encodings — same posture as portfolio_sizer.
+        for enc in ("utf-8-sig", "utf-8", "latin-1"):
+            try:
+                with p.open("r", encoding=enc, newline="") as f:
+                    import csv
+                    reader = csv.DictReader(f)
+                    return sum(1 for _ in reader)
+            except UnicodeDecodeError:
+                continue
+        return None
+    except Exception:
+        return None
+
+
+def _active_portfolio_path() -> str | None:
+    """Return the active portfolio CSV path under /data/portfolios.
+
+    Picks the most-recently-modified file, matching auto_setup's pick-the-
+    only-portfolio convention. Returns None if the directory is empty or
+    unreadable.
+    """
+    from pathlib import Path
+    portfolio_dir = Path(os.environ.get("IC_PORTFOLIO_DIR", "/data/portfolios"))
+    if not portfolio_dir.is_dir():
+        return None
+    candidates = [p for p in portfolio_dir.glob("*.csv") if p.is_file()]
+    if not candidates:
+        return None
+    # Most-recently-modified wins — matches auto_setup behavior.
+    return str(max(candidates, key=lambda p: p.stat().st_mtime))
+
+
+def _key_recommendations(holdings_count: int | None) -> dict[str, Any]:
+    """Build a structured recommendation block for the agent / dashboard.
+
+    Each key entry has:
+        priority — "required" | "strongly_recommended" | "recommended" | "optional"
+        reason   — human-readable why this priority for THIS portfolio size
+
+    The narrator endpoint (TOGETHER_API_KEY) is `strongly_recommended`
+    universally — without it, ic-engine falls back to the heuristic
+    narrator which produces catalog-style answers, not narrative ones.
+    """
+    recs: list[dict[str, Any]] = []
+
+    # Narrator — always strongly recommended.
+    recs.append({
+        "name": "TOGETHER_API_KEY",
+        "priority": "strongly_recommended",
+        "reason": (
+            "Narrator endpoint. Without it, ic-engine falls back to the "
+            "heuristic narrator (envelope-catalog style); LLM-driven "
+            "narrative answers are unavailable. Free tier sufficient for "
+            "most users."
+        ),
+        "signup_url": "https://api.together.xyz/",
+    })
+
+    # Massive — priority scales with size.
+    if holdings_count is not None and holdings_count >= _HUGE_PORTFOLIO_THRESHOLD:
+        massive_priority = "strongly_recommended"
+        massive_reason = (
+            f"Portfolio has {holdings_count} holdings (>={_HUGE_PORTFOLIO_THRESHOLD}). "
+            "yfinance free-tier rate-limits and times out at this size. "
+            "MASSIVE_API_KEY (Polygon) provides parallelized batch fetching "
+            "without throttling — without it, refresh will be slow and "
+            "incomplete."
+        )
+    elif holdings_count is not None and holdings_count >= _LARGE_PORTFOLIO_THRESHOLD:
+        massive_priority = "recommended"
+        massive_reason = (
+            f"Portfolio has {holdings_count} holdings "
+            f"(>={_LARGE_PORTFOLIO_THRESHOLD}). yfinance throttling becomes "
+            "noticeable; MASSIVE_API_KEY parallelizes the price fetch and "
+            "avoids the slow path."
+        )
+    else:
+        size_note = (
+            f"Portfolio has {holdings_count} holdings"
+            if holdings_count is not None
+            else "Portfolio size unknown"
+        )
+        massive_priority = "optional"
+        massive_reason = (
+            f"{size_note}. yfinance free-tier is fine at this size; "
+            "MASSIVE_API_KEY only needed for large portfolios "
+            f"(>={_LARGE_PORTFOLIO_THRESHOLD} holdings)."
+        )
+
+    recs.append({
+        "name": "MASSIVE_API_KEY",
+        "priority": massive_priority,
+        "reason": massive_reason,
+        "signup_url": "https://polygon.io/",
+    })
+
+    # News providers — recommended (any one, two-source for coverage).
+    for name, signup, blurb in [
+        ("FINNHUB_KEY", "https://finnhub.io/",
+         "Earnings, analyst ratings, company-specific news"),
+        ("MARKETAUX_API_KEY", "https://www.marketaux.com/",
+         "Equity-tagged news with sentiment scoring"),
+        ("NEWSAPI_KEY", "https://newsapi.org/",
+         "Broad news API, supplements Finnhub for non-listed coverage"),
+        ("ALPHA_VANTAGE_KEY", "https://www.alphavantage.co/",
+         "Fundamentals + corporate actions"),
+    ]:
+        recs.append({
+            "name": name,
+            "priority": "recommended",
+            "reason": blurb,
+            "signup_url": signup,
+        })
+
+    # FRED — optional (macro context).
+    recs.append({
+        "name": "FRED_API_KEY",
+        "priority": "optional",
+        "reason": "Macro / treasury yield context. Free, no rate limit.",
+        "signup_url": "https://fred.stlouisfed.org/docs/api/api_key.html",
+    })
+
+    return {"keys": recs}
+
+
+async def portfolio_keys_recommend(portfolio_path: str | None = None) -> dict[str, Any]:
+    """Return size-aware API key recommendations for the active portfolio.
+
+    Inspects the portfolio (default: most-recently-modified CSV under
+    /data/portfolios) and returns a per-key priority + rationale block:
+
+      - Portfolios with >=100 holdings: MASSIVE_API_KEY → strongly_recommended
+      - Portfolios with >=50 holdings: MASSIVE_API_KEY → recommended
+      - Smaller portfolios: MASSIVE_API_KEY → optional
+
+    TOGETHER_API_KEY is always strongly_recommended (narrator endpoint).
+    News + FRED keys carry their normal priority.
+
+    Use case: dashboard Settings tab + agent setup-orchestrator surface
+    the recommendation so users with 200-holding portfolios know upfront
+    that they need a Polygon key for non-throttled refresh.
+    """
+    path = portfolio_path or _active_portfolio_path()
+    holdings_count = _count_portfolio_holdings(path) if path else None
+    existing = _read_existing()
+    block = _key_recommendations(holdings_count)
+    # Annotate each recommendation with its current configured state.
+    for entry in block["keys"]:
+        entry["configured"] = bool(existing.get(entry["name"]))
+    return {
+        "portfolio_path": path,
+        "holdings_count": holdings_count,
+        "recommendations": block["keys"],
+    }
+
+
 async def portfolio_keys_delete(name: str) -> dict[str, Any]:
     """Delete a single configured key by name."""
     if name not in _allowlist():
@@ -246,5 +427,31 @@ KEYS_TOOLS: dict[str, dict[str, Any]] = {
         },
         required=["name"],
         handler=portfolio_keys_delete,
+    ),
+    "portfolio_keys_recommend": _tool(
+        description=(
+            "Return size-aware API key recommendations for the active "
+            "portfolio. Inspects the most-recently-modified CSV under "
+            "/data/portfolios (or `portfolio_path` if provided) and "
+            "returns per-key priority (`strongly_recommended` / "
+            "`recommended` / `optional`) + rationale + signup_url + "
+            "current configured state. Use this to surface portfolio-"
+            "specific guidance to the user — large portfolios get "
+            "MASSIVE_API_KEY upgraded to strongly_recommended because "
+            "yfinance throttles. TOGETHER_API_KEY is always strongly_"
+            "recommended (narrator endpoint)."
+        ),
+        parameters={
+            "portfolio_path": {
+                "type": "string",
+                "description": (
+                    "Optional explicit portfolio CSV path. If omitted, "
+                    "the most-recently-modified CSV under /data/portfolios "
+                    "is used."
+                ),
+            },
+        },
+        required=[],
+        handler=portfolio_keys_recommend,
     ),
 }
