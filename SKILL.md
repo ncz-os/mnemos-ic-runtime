@@ -3,7 +3,7 @@ name: investorclaw
 description: Deterministic-first portfolio analyzer — holdings, performance, Sharpe + Sortino, FRED yield curves, bond duration, sector breakdowns, scenario rebalancing — via MCP-HTTP. Backed by ic-engine and clio.
 homepage: https://github.com/argonautsystems/InvestorClaw
 user-invocable: true
-metadata: {"license":"MIT-0","version":"4.1.38","image":"ghcr.io/argonautsystems/ic-engine:4.1.38-cpu","mcp-endpoint":"http://localhost:18090/mcp","transport":"streamable-http"}
+metadata: {"license":"MIT-0","version":"4.1.39","image":"ghcr.io/argonautsystems/ic-engine:4.1.39-cpu","mcp-endpoint":"http://localhost:18090/mcp","transport":"streamable-http"}
 ---
 
 <!--
@@ -11,7 +11,7 @@ SPDX-License-Identifier: MIT-0
 Copyright 2026 InvestorClaw Contributors
 -->
 
-# InvestorClaw — portfolio analysis skill (v4.1.38)
+# InvestorClaw — portfolio analysis skill (v4.1.39)
 
 A deterministic-first portfolio analyzer that does real money math: holdings
 snapshots, performance metrics, Sharpe ratios, FRED yield curves, bond
@@ -147,7 +147,7 @@ container goes into `init_state=failed`. Pre-creating the directory
 as the host user sidesteps the docker bind-mount UID inheritance
 quirk.
 
-The compose pulls `ghcr.io/argonautsystems/ic-engine:4.1.38-cpu` (publicly hosted, no auth) and runs it on `localhost:18090` (MCP + REST) and `localhost:18092` (dashboard).
+The compose pulls `ghcr.io/argonautsystems/ic-engine:4.1.39-cpu` (publicly hosted, no auth) and runs it on `localhost:18090` (MCP + REST) and `localhost:18092` (dashboard).
 
 ### If Docker isn't installed
 
@@ -192,7 +192,7 @@ your agent talks to it. Expect this timeline on a fresh install:
 
 | Phase | Time | What's happening | What you'll see |
 |---|---|---|---|
-| Image extract | 5–30 s | First-time pull of `ic-engine:4.1.38-cpu` (~600 MB) | docker compose progress bars |
+| Image extract | 5–30 s | First-time pull of `ic-engine:4.1.39-cpu` (~600 MB) | docker compose progress bars |
 | Bridge boot | 2–3 s | FastMCP server binds `:18090`, dashboard binds `:18092` | `/healthz` returns 200, `init_state: not_started` |
 | `portfolio_setup` | 1–60 s | Auto-discover portfolio files in `./portfolios/` | `init_state: initializing`, `current_stage: setup` |
 | `portfolio_refresh` | 30–120 s | Pull quotes / analyst / news / FRED yields for each symbol | `init_state: initializing`, `current_stage: refresh` |
@@ -756,6 +756,132 @@ Check init progress: `curl http://127.0.0.1:18090/api/portfolio/initialize/statu
 docker compose down -v   # removes the data volume — all envelopes lost
 docker compose up -d     # cold restart with auto-init
 ```
+
+---
+
+## Upgrading
+
+The container is meant to be replaced wholesale on each release. The
+`/data` volume mount preserves user state across replacements, so the
+standard upgrade is "stop, pull, restart with the same volume." For
+cross-host migration or defensive snapshots, use the JSON
+export/import surface.
+
+### 1. Check for a new version
+
+```bash
+curl -s -X POST http://localhost:18090/api/portfolio/version_check | jq
+```
+
+```json
+{
+  "running": "4.1.38",
+  "latest": "4.1.39",
+  "upgrade_available": true,
+  "registry": "ghcr.io",
+  "repository": "argonautsystems/ic-engine",
+  "next_steps": [
+    "Run `portfolio_export` to snapshot your current state…",
+    "On the host: `docker compose pull && docker compose up -d`…",
+    "Wait for /healthz init_state=ready (typically 30-60s).",
+    "Run `portfolio_version_check` again to confirm…"
+  ]
+}
+```
+
+The same call is exposed as MCP tool `portfolio_version_check`. Agents
+should poll this on demand (e.g. once per session) and surface the
+upgrade prompt to the user. Network failures return `latest: null` +
+a warning rather than 5xx — version check is advisory, not load-bearing.
+
+### 2. Snapshot current state (recommended)
+
+```bash
+curl -s -X POST http://localhost:18090/api/portfolio/export > snap.json
+```
+
+The snapshot bundles:
+
+- All CSVs under `/data/portfolios/` (UTF-8 text, base64 if binary).
+- `/data/stonkmode.json` persona state if present.
+- The list of currently-configured key NAMES (no values).
+
+It deliberately does **NOT** carry API key values. Keys are plaintext
+secrets that persist via the `/data` volume mount; for cross-host
+migration where the volume isn't shared, re-set keys via
+`portfolio_keys_set` after import.
+
+### 3. Pull + replace the container
+
+(host-shell — agents tell the user, agents don't execute this)
+
+```bash
+# Standard Docker Compose
+docker compose pull
+docker compose up -d
+
+# Podman + systemd quadlet (NCZ pi-gen layout)
+sudo podman pull ghcr.io/argonautsystems/ic-engine:latest
+sudo systemctl restart ic-engine.service
+
+# Standalone podman/docker run
+docker pull ghcr.io/argonautsystems/ic-engine:latest
+docker rm -f ic-engine
+docker run -d --name ic-engine \
+  -p 18090:8090 -p 18092:8092 \
+  -v /your/data/dir:/data \
+  --restart unless-stopped \
+  ghcr.io/argonautsystems/ic-engine:latest
+```
+
+### 4. Wait for `init_state=ready`
+
+```bash
+until curl -s http://localhost:18090/healthz | jq -e '.init_ready' > /dev/null; do
+  sleep 5
+done
+```
+
+First-run after an image bump may take 30-90 s while the engine
+warms its cache.
+
+### 5. Restore state (only if `/data` was lost)
+
+```bash
+curl -s -X POST http://localhost:18090/api/portfolio/import \
+  -H "Content-Type: application/json" \
+  -d "{\"snapshot\": $(cat snap.json)}"
+```
+
+Then re-set API keys via the dashboard Settings tab, or:
+
+```bash
+curl -s -X POST http://localhost:18090/api/portfolio/keys_set \
+  -H "Content-Type: application/json" \
+  -d '{"keys": {"TOGETHER_API_KEY": "tk-…", "FRED_API_KEY": "…"}}'
+```
+
+The import response includes `configured_keys_in_snapshot`, the list
+of key names that were set on the source host — agents use this to
+prompt the user for exactly the right set.
+
+### Agent-driven upgrade flow (single-shot)
+
+```text
+User:  "Check for upgrades."
+Agent: portfolio_version_check
+       → "v4.1.39 available, you are on v4.1.38"
+User:  "Upgrade me."
+Agent: 1. portfolio_export → save the snapshot JSON
+       2. surface the host-shell pull+restart commands to the user
+       3. poll /healthz until init_ready
+       4. portfolio_version_check (running == latest? confirm)
+       5. iff /data was lost: portfolio_import + prompt user for keys
+```
+
+The agent never executes the host-shell step itself — running shell on
+the host is outside the container's authority. Surface the commands
+clearly and let the user run them.
 
 ---
 

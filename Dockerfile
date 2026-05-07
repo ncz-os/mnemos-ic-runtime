@@ -283,6 +283,11 @@ ENV IC_REPORTS_DIR=/data/reports
 ENV IC_KEYS_FILE=/data/keys.env
 ENV IC_MCP_BIND=0.0.0.0:8090
 ENV IC_DASHBOARD_BIND=0.0.0.0:8092
+# IC_ENGINE_VERSION is read by /api/version + portfolio_version_check
+# so the bridge can self-report its image version (the OCI label below
+# isn't readable from inside the container without docker socket access).
+# Bump this AND the LABEL line at the bottom of the file together.
+ENV IC_ENGINE_VERSION=4.1.39
 
 # ic-engine reads its own canonical env-var names (INVESTOR_CLAW_*).
 # Set them to the same values so subprocess'd analyzers honor /data/.
@@ -346,4 +351,4 @@ LABEL org.opencontainers.image.description="Portfolio analysis service exposing 
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.source="https://github.com/mnemos-os/mnemos-ic-runtime"
 LABEL org.opencontainers.image.documentation="https://investorclaw.app"
-LABEL org.opencontainers.image.version="4.1.38"
+LABEL org.opencontainers.image.version="4.1.39"

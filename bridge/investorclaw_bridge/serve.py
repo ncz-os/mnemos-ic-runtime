@@ -149,7 +149,10 @@ def main() -> int:
 
     @dashboard_app.get("/api/version")
     async def version() -> JSONResponse:
-        return JSONResponse({"version": "4.0.0a1", "service": "investorclaw-bridge"})
+        return JSONResponse({
+            "version": os.environ.get("IC_ENGINE_VERSION", "unknown"),
+            "service": "investorclaw-bridge",
+        })
 
     # Wire the first-run setup API + bare-metal HTML form
     # (per GRAEAE 2026-05-01 — keep pilots in browser, out of nano)

@@ -151,6 +151,26 @@ class KeysRecommendBody(_BaseModel):
     portfolio_path: str = ""
 
 
+class VersionCheckBody(_BaseModel):
+    """Optional registry/repository overrides for the version check.
+
+    Defaults to ghcr.io/argonautsystems/ic-engine. Override only for
+    forks or private mirrors.
+    """
+    registry: str = "ghcr.io"
+    repository: str = "argonautsystems/ic-engine"
+
+
+class ImportBody(_BaseModel):
+    """Snapshot wrapper for portfolio_import.
+
+    The body is `{"snapshot": <export-output>}` — wrapping keeps the
+    surface symmetric with portfolio_keys_set's `{"keys": {...}}` shape
+    and leaves room for future top-level options (e.g. dry_run).
+    """
+    snapshot: dict[str, Any]
+
+
 class ResponseGetBody(_BaseModel):
     """Lookup by run_id (serial number)."""
     run_id: str
@@ -278,6 +298,40 @@ def register_rest_routes(app: Any) -> None:
         """
         portfolio_path = body.portfolio_path or None
         return await TOOL_REGISTRY["portfolio_keys_recommend"]["handler"](portfolio_path)
+
+    # ──────────────────────────────────────────────────────────────────
+    # Upgrade flow: version check + state export/import
+    # ──────────────────────────────────────────────────────────────────
+
+    @app.post("/api/portfolio/version_check")
+    async def rest_version_check(
+        body: VersionCheckBody = Body(default_factory=VersionCheckBody),
+    ) -> dict[str, Any]:
+        """Compare running container version to the latest published on
+        ghcr.io. Returns running, latest, upgrade_available, and human-
+        readable next_steps. Network failures return latest=null + a
+        warning rather than 5xx — version check is advisory.
+        """
+        return await TOOL_REGISTRY["portfolio_version_check"]["handler"](
+            registry=body.registry, repository=body.repository,
+        )
+
+    @app.post("/api/portfolio/export")
+    async def rest_export() -> dict[str, Any]:
+        """Return a JSON snapshot of /data state (portfolios + stonkmode +
+        configured-key-NAMES). Does NOT include API key values. Use as
+        the input to /api/portfolio/import for backup/restore or
+        cross-host migration.
+        """
+        return await TOOL_REGISTRY["portfolio_export"]["handler"]()
+
+    @app.post("/api/portfolio/import")
+    async def rest_import(body: ImportBody = Body(...)) -> dict[str, Any]:
+        """Restore a snapshot produced by /api/portfolio/export. Body
+        shape: `{"snapshot": <export-output>}`. Existing files are
+        overwritten. Re-set API keys via portfolio_keys_set after import.
+        """
+        return await TOOL_REGISTRY["portfolio_import"]["handler"](body.snapshot)
 
     # Convenience: a GET alias on /api/portfolio/keys/status for browser/dev
     # use. The canonical path remains /api/portfolio/keys_status to match

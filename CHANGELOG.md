@@ -9,6 +9,67 @@ Distribution-edge artifacts (`SKILL.md`, `compose.yml`, `install.yaml`,
 `agent-skills/**`) are MIT-0; substantive code (bridge, dashboard,
 Dockerfile, tests) is Apache 2.0.
 
+## [4.1.39] — 2026-05-07
+
+### Added
+
+- **Agent-driven upgrade flow.** Three new MCP tools + matching REST
+  endpoints let an agent walk a user through a container upgrade end-
+  to-end:
+  - `portfolio_version_check` — queries ghcr.io anonymously for the
+    latest published `argonautsystems/ic-engine` semver tag and
+    compares to the running container's `IC_ENGINE_VERSION`. Returns
+    `running`, `latest`, `upgrade_available`, and human-readable
+    `next_steps`. Network failures degrade to `latest: null` + a
+    warning rather than 5xx — version check is advisory.
+  - `portfolio_export` — JSON snapshot of `/data` state (portfolios +
+    stonkmode persona). Schema-pinned at `ic-engine-export/v1`.
+    **Excludes API key values** by design; keys are plaintext secrets
+    that persist via the `/data` volume across container replacement.
+    Configured key NAMES are echoed so the import side knows which
+    keys to prompt the user for re-set on cross-host migration.
+  - `portfolio_import` — restores a snapshot. Path-traversal
+    sanitization on filenames; existing files overwritten; schema
+    version validated strictly.
+- **`IC_ENGINE_VERSION` env var** baked into the image. The bridge's
+  `/api/version` and the new `version_check` tool read from it (the
+  OCI label isn't reachable from inside the container without docker
+  socket access). Single source of truth — bump the LABEL + ENV
+  together per release.
+
+### Fixed
+
+- **`/api/version` was hard-coded to `4.0.0a1`.** Now reads from
+  `IC_ENGINE_VERSION` and reports the actual running image version.
+
+### Docs
+
+- New `## Upgrading` section in `SKILL.md` documents the five-step
+  flow (check → snapshot → host-shell pull+restart → wait for ready →
+  optional restore) plus the agent-driven single-shot script. Spells
+  out that agents never execute host-shell commands themselves —
+  they surface them to the user.
+
+### Tests
+
+- 21 new tests in `tests/test_upgrade.py`: semver parsing, version
+  check (success + token failure + no-upgrade-needed), export
+  (portfolios + stonkmode + key-name-only invariant + secret-leak
+  guard), import (schema validation + portfolio writes + path-
+  traversal rejection + stonkmode + key-name surface), end-to-end
+  round-trip across distinct portfolio dirs. All pass; 40 total
+  across `test_upgrade.py` + `test_keys_recommend.py`.
+
+### Image
+
+- `ghcr.io/argonautsystems/ic-engine:4.1.39-cpu` (multi-arch amd64 +
+  arm64/v8). CI quota still exhausted on mnemos-os; manual buildx
+  publish from TYPHON until the namespace is topped up or migrated to
+  ARGOS self-hosted runner.
+
+ic-engine ref unchanged from v4.1.38: pinned to `11adc63c`. v4.1.39
+is bridge-only.
+
 ## [4.1.38] — 2026-05-07
 
 ### Added
