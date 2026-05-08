@@ -9,6 +9,102 @@ Distribution-edge artifacts (`SKILL.md`, `compose.yml`, `install.yaml`,
 `agent-skills/**`) are MIT-0; substantive code (bridge, dashboard,
 Dockerfile, tests) is Apache 2.0.
 
+## [4.1.41] — 2026-05-07
+
+### Added
+
+- **Dashboard `keys_recommend` wireup (#94).** The Settings tab now
+  surfaces the `portfolio_keys_recommend` priority block end-to-end:
+  - Color-coded priority badges (`STRONGLY RECOMMENDED` red,
+    `RECOMMENDED` amber, `OPTIONAL` gray) per key.
+  - Inline rationale — for portfolios over the engine's holding-count
+    thresholds, the size-aware MASSIVE_API_KEY justification text
+    ("Portfolio has N holdings (>=100). yfinance free-tier rate-limits
+    and times out…") shows next to the badge.
+  - Signup URL link per key (validated for `http://`/`https://` scheme;
+    non-conforming URLs render as inert text, no clickable href).
+  - Per-key delete button on configured rows, gated by the engine's
+    allowlist server-side and a `confirm()` JS guard client-side.
+  - `<datalist>` allowlist hint on the key-name input prevents typos
+    that would otherwise be silently rejected.
+
+- **Encrypted backup/restore browser surface (v4.1.40 follow-up).**
+  Settings tab gains a dedicated "Encrypted key backup" section:
+  - Lists existing backups under `/data/backups/` (filename, size,
+    created, KDF) with no passphrase required.
+  - Backup form (passphrase + optional label) calls
+    `portfolio_keys_backup` server-side. Min-12-char passphrase.
+  - Restore form (passphrase + optional path) calls
+    `portfolio_keys_restore`. Auto-picks the most recent `.bak` if
+    path omitted. `confirm()` JS guard before overwriting
+    `/data/keys.env`. Browser-form passphrase entry keeps the secret
+    out of agent conversation history (the threat model the v4.1.40
+    encrypted-backup design specifically called out).
+
+- **`IC_ENGINE_VERSION` self-reporting in dashboard.** New
+  `_running_version()` helper reads the env var that the Dockerfile
+  bakes in (since v4.1.39); the running version now appears in the
+  header meta line and the About tab. Replaces the hardcoded
+  `v4.1.x` literal.
+
+### Security
+
+- **XSS in `?message=` query param.** Dashboard `Overview` and
+  `Settings` rendered the `?message=` redirect-message body without
+  HTML-escaping, allowing `<script>` injection via crafted
+  phishing-style URLs. Both call sites now route through `_h()`.
+  Dashboard `Lookup` was already correct.
+
+- **`javascript:` URL sink in news + keys_recommend links.**
+  Per-symbol news headlines and `keys_recommend` signup URLs both
+  rendered untrusted-source URLs into anchor `href` attrs with only
+  HTML escaping — a `javascript:`/`data:`/`vbscript:` URL would have
+  been a clickable XSS sink. New `_http_signup_url()` helper
+  validates the scheme is `http` or `https` before rendering as a
+  link; unsafe schemes degrade to plain text with no anchor.
+
+- **CSRF on mutating POST endpoints.** All six dashboard mutating
+  routes (`/dashboard/settings/keys`, `/keys/delete`, `/keys_backup`,
+  `/keys_restore`, `/dashboard/upload`, `/dashboard/regenerate`)
+  now enforce same-origin via `_csrf_redirect()` — at least one of
+  `Origin` / `Referer` must be present AND match the request host.
+  Default-rejects on dual-absent (closes the fail-open path some
+  no-referrer browser configs would otherwise enable).
+
+- **Streaming upload size cap.** Portfolio upload was previously
+  bounded by a post-`await upload.read()` length check, allowing
+  the entire payload to land in memory before the cap fired.
+  Replaced with a chunked streaming read (1 MiB chunks) plus a
+  byte counter that aborts and unlinks the partial file once the
+  50 MB cap is exceeded.
+
+- **Delete-key allowlist enforcement.** The `/dashboard/settings/keys/delete`
+  handler now checks the form-supplied `key_name` against the
+  engine's `settable` allowlist before delegating to
+  `portfolio_keys_delete`, matching the policy on `/keys` (set).
+
+- **Header version escape.** `IC_ENGINE_VERSION` is now
+  HTML-escaped before interpolation into the shell header — a
+  malformed env value cannot inject HTML into every dashboard page.
+
+### Changed
+
+- **News tab default-collapsed.** Per-symbol `<details>` blocks no
+  longer use the `open` attribute; on a 200-symbol portfolio the
+  page is now navigable instead of multi-screen-tall by default.
+
+- **Reports JSON listing capped.** The Reports tab's raw-JSON
+  listing now caps at 100 entries (the HTML-report list was already
+  capped at 50).
+
+### Notes
+
+- v4.1.41 is bridge-only: `IC_ENGINE_REF` unchanged at
+  `11adc63c00e215c36aef9ffaf985555eb2f83bd6`. Engine source is
+  identical to v4.1.38–v4.1.40.
+- Two adversarial-review iterations ran codex against the diff per
+  CLAUDE.md directive 6 + 7; round 3 verdict was APPROVE.
+
 ## [4.1.40] — 2026-05-07
 
 ### Added

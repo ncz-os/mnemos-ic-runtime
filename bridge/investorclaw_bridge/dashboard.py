@@ -36,6 +36,19 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 REPORTS_DIR = os.environ.get("IC_REPORTS_DIR", "/data/reports")
 
+# Hard cap on portfolio uploads.
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+def _running_version() -> str:
+    """Read the running ic-engine version (set by Dockerfile in v4.1.39+).
+
+    Falls back to a generic "v4.1.x" placeholder if the env var is unset
+    so the dashboard renders cleanly outside a container.
+    """
+    return os.environ.get("IC_ENGINE_VERSION") or "v4.1.x"
+
 # (slug, label, icon)
 # Coverage map (cobol nlq-prompts.json v2.5.0 — 30 NLQs):
 #   Overview p23/p24 | Holdings p01/p02/p11/p28 | Performance p03/p04
@@ -114,6 +127,7 @@ def _shell(active_slug: str, body: str, title: str = "InvestorClaw") -> str:
         )
     nav = "".join(nav_items)
     today = _dt.date.today().isoformat()
+    version = _running_version()
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -222,7 +236,7 @@ form button:hover {{ background: #2ea043; }}
 
 <header>
   <h1>InvestorClaw</h1>
-  <span class="meta">{today} · v4.1.x</span>
+  <span class="meta">{today} · {_h(version)}</span>
 </header>
 
 <nav>{nav}</nav>
@@ -277,7 +291,7 @@ def _overview(get_init_state, message: str = "") -> str:
     eod_today_path = os.path.join(REPORTS_DIR, f"eod_report_{today_compact}.html")
     has_today = os.path.isfile(eod_today_path)
     msg_html = (
-        f'<div class="section-card" style="border-color:#3fb950;color:#3fb950;">{message}</div>'
+        f'<div class="section-card" style="border-color:#3fb950;color:#3fb950;">{_h(message)}</div>'
         if message else ""
     )
 
@@ -554,6 +568,45 @@ def _h(s) -> str:
     return html.escape(str(s))
 
 
+def _http_signup_url(url: Any) -> str | None:
+    """Return a safe http(s) signup URL, or None for inert rendering."""
+    from urllib.parse import urlparse
+
+    if not isinstance(url, str):
+        return None
+    parsed = urlparse(url.strip())
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return parsed.geturl()
+    return None
+
+
+def _csrf_redirect(request: Request, target_path: str) -> RedirectResponse | None:
+    """Reject cross-origin dashboard POSTs based on Origin/Referer host."""
+    from urllib.parse import quote, urlparse
+
+    request_host = (request.headers.get("host") or request.url.netloc).lower()
+    seen_matching_header = False
+    for header_name in ("origin", "referer"):
+        header_value = request.headers.get(header_name)
+        if not header_value:
+            continue
+        parsed_host = urlparse(header_value).netloc.lower()
+        if not parsed_host or parsed_host != request_host:
+            msg = "Rejected cross-origin dashboard POST"
+            return RedirectResponse(
+                url=f"{target_path}?message={quote(msg)}",
+                status_code=303,
+            )
+        seen_matching_header = True
+    if not seen_matching_header:
+        msg = "Rejected cross-origin dashboard POST"
+        return RedirectResponse(
+            url=f"{target_path}?message={quote(msg)}",
+            status_code=303,
+        )
+    return None
+
+
 def _performance_tab() -> str:
     perf = _load_json("performance.json")
     if not perf:
@@ -675,6 +728,7 @@ def _news_tab() -> str:
     def _item_html(item: Dict[str, Any]) -> str:
         title = _h(item.get("title", ""))
         link = item.get("link") or item.get("url") or ""
+        safe_link = _http_signup_url(link)
         source = _h(item.get("source", ""))
         date = _h(str(item.get("publish_date", ""))[:19].replace("T", " "))
         sentiment = item.get("sentiment", "neutral")
@@ -701,8 +755,8 @@ def _news_tab() -> str:
         meta = ' · '.join(meta_bits)
 
         title_html = (
-            f'<a href="{_h(link)}" target="_blank" rel="noopener noreferrer">{title}</a>'
-            if link else title
+            f'<a href="{_h(safe_link)}" target="_blank" rel="noopener noreferrer">{title}</a>'
+            if safe_link else title
         )
         return (
             f'<div style="padding:10px 0;border-bottom:1px solid #21262d;">'
@@ -724,7 +778,7 @@ def _news_tab() -> str:
                 continue
             items_html = "".join(_item_html(it) for it in items)
             per_symbol_blocks.append(
-                f'<details open style="margin-bottom:16px;">'
+                f'<details style="margin-bottom:16px;">'
                 f'<summary style="cursor:pointer;padding:8px 12px;background:#161b22;'
                 f'border:1px solid #30363d;border-radius:6px;font-weight:600;">'
                 f'<span style="color:#58a6ff;">{_h(sym)}</span> '
@@ -1225,7 +1279,7 @@ def _reports_tab() -> str:
 <h2>JSON snapshots</h2>
 <p class="muted">Raw section data behind the dashboard tabs.</p>
 <ul>"""
-        json_files = sorted(_glob.glob(os.path.join(REPORTS_DIR, "*.json")))
+        json_files = sorted(_glob.glob(os.path.join(REPORTS_DIR, "*.json")))[:100]
         for jp in json_files:
             jname = os.path.basename(jp)
             jsize = os.path.getsize(jp) / 1024
@@ -1234,39 +1288,161 @@ def _reports_tab() -> str:
     return _shell("reports", body, title="Reports")
 
 
-def _settings_tab(get_keys_status, message: str = "") -> str:
+def _priority_badge(priority: str) -> str:
+    """Color-coded pill for a key recommendation priority."""
+    style_map = {
+        "strongly_recommended": ("#f85149", "STRONGLY RECOMMENDED"),
+        "required": ("#f85149", "REQUIRED"),
+        "recommended": ("#d29922", "RECOMMENDED"),
+        "optional": ("#8b949e", "OPTIONAL"),
+    }
+    color, label = style_map.get(
+        priority, ("#8b949e", priority.upper().replace("_", " ") if priority else "OPTIONAL")
+    )
+    return (
+        f'<span style="background:{color};color:#0d1117;padding:2px 8px;'
+        f'border-radius:10px;font-size:10px;font-weight:700;'
+        f'white-space:nowrap;">{_h(label)}</span>'
+    )
+
+
+def _settings_tab(
+    get_keys_status,
+    recommendations: list | None = None,
+    backups: list | None = None,
+    message: str = "",
+) -> str:
     status = get_keys_status()
-    configured = status.get("configured", []) or []
-    settable = status.get("settable", []) or []
+    configured = set(status.get("configured", []) or [])
+    settable = list(status.get("settable", []) or [])
     msg_html = (
-        f'<div class="section-card" style="border-color:#3fb950;color:#3fb950;">{message}</div>'
+        f'<div class="section-card" style="border-color:#3fb950;color:#3fb950;">{_h(message)}</div>'
         if message
         else ""
     )
 
-    config_rows = []
-    for key in configured:
-        config_rows.append(
-            f"<tr><td><code>{key}</code></td>"
-            "<td><span class=\"kpi-positive\">configured</span></td></tr>"
-        )
-    for key in settable:
-        if key not in configured:
-            config_rows.append(
-                f"<tr><td><code>{key}</code></td>"
-                "<td class=\"muted\">not set</td></tr>"
-            )
+    rec_by_name = {r.get("name"): r for r in (recommendations or []) if r.get("name")}
+    all_names = sorted(set(settable) | set(rec_by_name.keys()) | configured)
 
-    set_form = """<form action="/dashboard/settings/keys" method="post">
+    rows = []
+    for name in all_names:
+        rec = rec_by_name.get(name, {})
+        priority = rec.get("priority", "optional")
+        reason = rec.get("reason", "")
+        signup_url = rec.get("signup_url", "")
+        safe_signup_url = _http_signup_url(signup_url)
+        is_configured = name in configured
+
+        status_cell = (
+            '<span class="kpi-positive">configured</span>'
+            if is_configured
+            else '<span class="muted">not set</span>'
+        )
+        signup_cell = (
+            f'<a href="{_h(safe_signup_url)}" target="_blank" rel="noopener noreferrer">sign up</a>'
+            if safe_signup_url
+            else '<span class="muted">sign up</span>' if signup_url else "—"
+        )
+        delete_cell = (
+            f'<form action="/dashboard/settings/keys/delete" method="post" '
+            f'style="margin:0;display:inline;" '
+            f'onsubmit="return confirm(\'Delete {_h(name)}?\');">'
+            f'<input type="hidden" name="key_name" value="{_h(name)}">'
+            f'<button type="submit" style="background:#21262d;color:#f85149;'
+            f'border:1px solid #30363d;padding:4px 10px;border-radius:4px;'
+            f'font-size:11px;cursor:pointer;">delete</button>'
+            f'</form>'
+            if is_configured
+            else "—"
+        )
+        rows.append(
+            f"<tr><td><code>{_h(name)}</code></td>"
+            f"<td>{_priority_badge(priority)}</td>"
+            f"<td>{status_cell}</td>"
+            f'<td class="muted" style="max-width:420px;">{_h(reason) or "—"}</td>'
+            f"<td>{signup_cell}</td>"
+            f"<td>{delete_cell}</td></tr>"
+        )
+
+    keys_table = (
+        '<div class="section-card" style="overflow-x:auto;"><table>'
+        '<tr><th>Key</th><th>Priority</th><th>Status</th>'
+        '<th>Why</th><th>Sign up</th><th></th></tr>'
+        + "".join(rows)
+        + "</table></div>"
+    )
+
+    datalist = (
+        '<datalist id="settable_keys">'
+        + "".join(f'<option value="{_h(k)}">' for k in settable)
+        + "</datalist>"
+    )
+
+    set_form = f"""<form action="/dashboard/settings/keys" method="post">
   <div class="row">
-    <label>Key name</label>
-    <input type="text" name="key_name" placeholder="TOGETHER_API_KEY" required>
+    <label>Key name (allowlisted — see suggestions)</label>
+    <input type="text" name="key_name" list="settable_keys" placeholder="TOGETHER_API_KEY" required>
+    {datalist}
   </div>
   <div class="row">
     <label>Value (saved to /data/keys.env mode 0600 inside the container)</label>
     <input type="password" name="key_value" placeholder="tgp_v1_..." required>
   </div>
   <button type="submit">Save key</button>
+</form>"""
+
+    # Encrypted backup section (v4.1.40).
+    backup_rows_html = ""
+    backups = backups or []
+    if backups:
+        backup_rows = []
+        for b in backups:
+            fname = _h(b.get("filename", ""))
+            size_kb = float(b.get("size_bytes", 0) or 0) / 1024
+            created = _h(b.get("created", "—"))
+            kdf = _h(b.get("kdf", "—"))
+            backup_rows.append(
+                f'<tr><td><code>{fname}</code></td>'
+                f'<td style="text-align:right;">{size_kb:.1f} KB</td>'
+                f'<td class="muted">{created}</td>'
+                f'<td class="muted" style="font-size:11px;">{kdf}</td></tr>'
+            )
+        backup_rows_html = (
+            '<div class="section-card"><table>'
+            '<tr><th>File</th><th style="text-align:right;">Size</th>'
+            '<th>Created</th><th>KDF</th></tr>'
+            + "".join(backup_rows)
+            + "</table></div>"
+        )
+    else:
+        backup_rows_html = (
+            '<div class="empty">No encrypted backups yet. '
+            'Create one below — without a backup, keys do not migrate to a new host.</div>'
+        )
+
+    backup_form = """<form action="/dashboard/settings/keys_backup" method="post">
+  <div class="row">
+    <label>Passphrase (min 12 chars — without it the backup is unrecoverable)</label>
+    <input type="password" name="passphrase" minlength="12" required>
+  </div>
+  <div class="row">
+    <label>Optional label (alphanumeric / underscore / hyphen, ≤32 chars)</label>
+    <input type="text" name="label" pattern="[A-Za-z0-9_-]{0,32}" maxlength="32">
+  </div>
+  <button type="submit">Create encrypted backup</button>
+</form>"""
+
+    restore_form = """<form action="/dashboard/settings/keys_restore" method="post"
+  onsubmit="return confirm('Restore will overwrite /data/keys.env. Continue?');">
+  <div class="row">
+    <label>Passphrase</label>
+    <input type="password" name="passphrase" required>
+  </div>
+  <div class="row">
+    <label>Backup file (leave blank for most recent)</label>
+    <input type="text" name="backup_path" placeholder="(auto-pick most recent)">
+  </div>
+  <button type="submit" style="background:#d29922;">Restore from backup</button>
 </form>"""
 
     # Portfolio upload — list current files + form to add a new one.
@@ -1286,9 +1462,10 @@ def _settings_tab(get_keys_status, message: str = "") -> str:
         for name, size in portfolio_files
     ) or '<tr><td colspan="2" class="muted">No portfolio files uploaded yet.</td></tr>'
 
-    upload_form = """<form action="/dashboard/upload" method="post" enctype="multipart/form-data">
+    upload_max_mb = _MAX_UPLOAD_BYTES // (1024 * 1024)
+    upload_form = f"""<form action="/dashboard/upload" method="post" enctype="multipart/form-data">
   <div class="row">
-    <label>Portfolio file (CSV, XLSX, PDF — saved to <code>/data/portfolios/</code>)</label>
+    <label>Portfolio file (CSV, XLSX, PDF — saved to <code>/data/portfolios/</code>; max {upload_max_mb} MB)</label>
     <input type="file" name="portfolio_file" required accept=".csv,.tsv,.xls,.xlsx,.pdf,.json,.ofx,.qfx">
   </div>
   <button type="submit">Upload &amp; refresh</button>
@@ -1297,18 +1474,31 @@ def _settings_tab(get_keys_status, message: str = "") -> str:
     body = f"""<h2>Settings — provider keys</h2>
 {msg_html}
 <p class="muted">Keys persist to <code>/data/keys.env</code> inside the named Docker volume,
-mode 0600. Allowlisted names only — arbitrary key names are rejected.</p>
+mode 0600. Allowlisted names only — arbitrary key names are rejected. Priority is sized
+to your portfolio (more holdings → MASSIVE_API_KEY becomes strongly recommended).</p>
 
-<div class="section-card">
-  <table>
-    <tr><th>Key</th><th>Status</th></tr>
-    {"".join(config_rows)}
-  </table>
-</div>
+{keys_table}
 
 <h2>Add or update a key</h2>
 <div class="section-card">
 {set_form}
+</div>
+
+<h2>Encrypted key backup</h2>
+<p class="muted">Backups encrypt <code>/data/keys.env</code> with scrypt + AES-256-GCM and write
+armored ASCII files to <code>/data/backups/</code>. Use them to migrate keys across hosts —
+the file is safe to scp / email / clipboard. Passphrase is enforced server-side; without
+it, the backup is permanently unrecoverable.</p>
+{backup_rows_html}
+
+<h3>Create a backup</h3>
+<div class="section-card">
+{backup_form}
+</div>
+
+<h3>Restore from a backup</h3>
+<div class="section-card">
+{restore_form}
 </div>
 
 <h2>Portfolio files</h2>
@@ -1330,9 +1520,10 @@ broker statement here; the upload triggers a refresh and the new positions appea
 
 
 def _about_tab() -> str:
-    body = """<h2>About InvestorClaw</h2>
+    version = _running_version()
+    body = f"""<h2>About InvestorClaw</h2>
 <div class="section-card">
-  <p><strong>InvestorClaw v4.1.x</strong> — deterministic-first portfolio analyzer.</p>
+  <p><strong>InvestorClaw {_h(version)}</strong> — deterministic-first portfolio analyzer.</p>
   <p>Real money math, no LLM math. Holdings, performance (Sharpe + Sortino, max drawdown,
   beta, value-at-risk), bond duration, FRED yield curves, sector breakdowns, scenario
   rebalancing. The engine is pure Python; the narrator is an LLM with strict
@@ -1425,12 +1616,25 @@ async def _safe_call(fn):
             pass
 
 
+async def _maybe_await(value):
+    """Await `value` if it's a coroutine; otherwise return it."""
+    import inspect as _inspect
+    if _inspect.iscoroutine(value):
+        return await value
+    return value
+
+
 def attach_to(
     app: FastAPI,
     get_init_state,
     get_keys_status,
     set_key,
     regenerate=None,
+    get_keys_recommend=None,
+    delete_key=None,
+    backup_keys=None,
+    restore_keys=None,
+    list_backups=None,
 ) -> None:
     """Mount all dashboard tab routes on the given FastAPI app.
 
@@ -1445,6 +1649,22 @@ def attach_to(
     regenerate : optional async callable() -> dict
         Triggers a full refresh + analyzer sweep. Called from the Regenerate
         button on the Overview tab. Should return quickly (background-fired).
+    get_keys_recommend : optional callable -> dict
+        Returns ``{"recommendations": [...]}`` with size-aware priority +
+        rationale + signup_url per key (v4.1.38 #44 / dashboard #94).
+    delete_key : optional callable(name) -> dict
+        Deletes a single configured key.
+    backup_keys : optional callable(passphrase, label) -> dict
+        Creates an encrypted backup of /data/keys.env (v4.1.40 #96).
+    restore_keys : optional callable(passphrase, backup_path) -> dict
+        Restores keys from an encrypted backup file.
+    list_backups : optional callable -> dict
+        Returns ``{"backups": [...]}`` with metadata (no decrypt).
+    CSRF policy
+        Mutating dashboard POSTs compare any Origin or Referer header against
+        the request Host and reject mismatches with a 303 redirect. This keeps
+        the no-session dashboard compatible with IC_DASHBOARD_BIND deployments
+        while accepting same-origin browser submissions.
     """
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -1513,15 +1733,34 @@ def attach_to(
 
     @app.get("/dashboard/settings", response_class=HTMLResponse, include_in_schema=False)
     async def settings(message: str = "") -> HTMLResponse:
-        # get_keys_status may be sync or async (e.g. portfolio_keys_status is async)
-        import inspect as _inspect
-        result = get_keys_status()
-        if _inspect.iscoroutine(result):
-            result = await result
-        return HTMLResponse(_settings_tab(lambda: result, message=message))
+        status = await _maybe_await(get_keys_status())
+        recommendations: list = []
+        if get_keys_recommend is not None:
+            try:
+                rec_result = await _maybe_await(get_keys_recommend())
+                recommendations = rec_result.get("recommendations") or []
+            except Exception:
+                recommendations = []
+        backups: list = []
+        if list_backups is not None:
+            try:
+                backups_result = await _maybe_await(list_backups())
+                backups = backups_result.get("backups") or []
+            except Exception:
+                backups = []
+        return HTMLResponse(
+            _settings_tab(
+                lambda: status,
+                recommendations=recommendations,
+                backups=backups,
+                message=message,
+            )
+        )
 
     @app.post("/dashboard/settings/keys", include_in_schema=False)
     async def settings_save_key(request: Request) -> RedirectResponse:
+        if redirect := _csrf_redirect(request, "/dashboard/settings"):
+            return redirect
         form = await request.form()
         name = (form.get("key_name") or "").strip()
         value = (form.get("key_value") or "").strip()
@@ -1530,16 +1769,97 @@ def attach_to(
                 url="/dashboard/settings?message=Missing+name+or+value",
                 status_code=303,
             )
-        import inspect as _inspect
-        result = set_key(name, value)
-        if _inspect.iscoroutine(result):
-            result = await result
+        result = await _maybe_await(set_key(name, value))
         rejected = result.get("rejected") or []
         if rejected:
             msg = f"Key {name} rejected (not in allowlist)"
         else:
             msg = f"Saved {name}"
         from urllib.parse import quote
+        return RedirectResponse(
+            url=f"/dashboard/settings?message={quote(msg)}",
+            status_code=303,
+        )
+
+    @app.post("/dashboard/settings/keys/delete", include_in_schema=False)
+    async def settings_delete_key(request: Request) -> RedirectResponse:
+        from urllib.parse import quote
+        if redirect := _csrf_redirect(request, "/dashboard/settings"):
+            return redirect
+        form = await request.form()
+        name = (form.get("key_name") or "").strip()
+        if not name:
+            return RedirectResponse(
+                url="/dashboard/settings?message=Missing+key+name",
+                status_code=303,
+            )
+        if delete_key is None:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote('Delete not wired')}",
+                status_code=303,
+            )
+        status = await _maybe_await(get_keys_status())
+        settable = set(status.get("settable", []) or [])
+        if name not in settable:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote(f'Key {name} rejected (not in allowlist)')}",
+                status_code=303,
+            )
+        result = await _maybe_await(delete_key(name))
+        if result.get("deleted"):
+            msg = f"Deleted {name}"
+        else:
+            msg = f"Could not delete {name}: {result.get('detail') or result.get('error') or 'unknown'}"
+        return RedirectResponse(
+            url=f"/dashboard/settings?message={quote(msg)}",
+            status_code=303,
+        )
+
+    @app.post("/dashboard/settings/keys_backup", include_in_schema=False)
+    async def settings_keys_backup(request: Request) -> RedirectResponse:
+        from urllib.parse import quote
+        if redirect := _csrf_redirect(request, "/dashboard/settings"):
+            return redirect
+        form = await request.form()
+        passphrase = form.get("passphrase") or ""
+        label = (form.get("label") or "").strip()
+        if backup_keys is None:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote('Backup not wired')}",
+                status_code=303,
+            )
+        result = await _maybe_await(backup_keys(passphrase, label))
+        if "error" in result:
+            err = result.get("detail") or result.get("error")
+            msg = f"Backup failed: {err}"
+        else:
+            fname = result.get("filename", "backup")
+            msg = f"Backup created: {fname}"
+        return RedirectResponse(
+            url=f"/dashboard/settings?message={quote(msg)}",
+            status_code=303,
+        )
+
+    @app.post("/dashboard/settings/keys_restore", include_in_schema=False)
+    async def settings_keys_restore(request: Request) -> RedirectResponse:
+        from urllib.parse import quote
+        if redirect := _csrf_redirect(request, "/dashboard/settings"):
+            return redirect
+        form = await request.form()
+        passphrase = form.get("passphrase") or ""
+        backup_path = (form.get("backup_path") or "").strip()
+        if restore_keys is None:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote('Restore not wired')}",
+                status_code=303,
+            )
+        result = await _maybe_await(restore_keys(passphrase, backup_path))
+        if "error" in result:
+            err = result.get("hint") or result.get("detail") or result.get("error")
+            msg = f"Restore failed: {err}"
+        else:
+            n = len(result.get("key_names") or [])
+            msg = f"Restored {n} key{'s' if n != 1 else ''} from backup"
         return RedirectResponse(
             url=f"/dashboard/settings?message={quote(msg)}",
             status_code=303,
@@ -1553,6 +1873,8 @@ def attach_to(
     async def upload_portfolio(request: Request) -> RedirectResponse:
         """Multipart upload — write to /data/portfolios/, then trigger setup."""
         from urllib.parse import quote
+        if redirect := _csrf_redirect(request, "/dashboard/settings"):
+            return redirect
         try:
             form = await request.form()
         except Exception as e:
@@ -1582,14 +1904,33 @@ def attach_to(
             )
 
         dest = pdir / safe_name
+        total_bytes = 0
         try:
-            content = await upload.read()
-            dest.write_bytes(content)
+            with dest.open("wb") as f:
+                while True:
+                    chunk = await upload.read(_UPLOAD_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    total_bytes += len(chunk)
+                    if total_bytes > _MAX_UPLOAD_BYTES:
+                        try:
+                            dest.unlink()
+                        except OSError:
+                            pass
+                        return RedirectResponse(
+                            url=f"/dashboard/settings?message={quote(f'File too large: {total_bytes//1024//1024} MB > {_MAX_UPLOAD_BYTES//1024//1024} MB cap')}",
+                            status_code=303,
+                        )
+                    f.write(chunk)
             try:
                 dest.chmod(0o644)
             except OSError:
                 pass
         except Exception as e:
+            try:
+                dest.unlink()
+            except OSError:
+                pass
             return RedirectResponse(
                 url=f"/dashboard/settings?message={quote('Write failed: ' + str(e))}",
                 status_code=303,
@@ -1604,14 +1945,16 @@ def attach_to(
                 pass
 
         return RedirectResponse(
-            url=f"/dashboard/settings?message={quote(f'Saved {safe_name} ({len(content)//1024} KB) — refresh queued')}",
+            url=f"/dashboard/settings?message={quote(f'Saved {safe_name} ({total_bytes//1024} KB) — refresh queued')}",
             status_code=303,
         )
 
     @app.post("/dashboard/regenerate", include_in_schema=False)
-    async def regenerate_now() -> RedirectResponse:
+    async def regenerate_now(request: Request) -> RedirectResponse:
         """Fire the regenerate callable in the background; redirect immediately."""
         from urllib.parse import quote
+        if redirect := _csrf_redirect(request, "/"):
+            return redirect
         if regenerate is None:
             return RedirectResponse(
                 url=f"/?message={quote('Regenerate not wired (no callable provided)')}",

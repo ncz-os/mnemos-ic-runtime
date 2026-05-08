@@ -181,7 +181,17 @@ def main() -> int:
     # — mounted last so it doesn't get preempted by other root-route registrations.
     from . import dashboard
     from .mcp.tools.portfolio import get_init_state as _get_init_state
-    from .mcp.tools.keys import portfolio_keys_status, portfolio_keys_set
+    from .mcp.tools.keys import (
+        portfolio_keys_status,
+        portfolio_keys_set,
+        portfolio_keys_recommend,
+        portfolio_keys_delete,
+    )
+    from .mcp.tools.keys_backup import (
+        portfolio_keys_backup,
+        portfolio_keys_restore,
+        portfolio_keys_backups_list,
+    )
     from .mcp._runtime import _run_ic_engine
 
     async def _regenerate_sweep() -> dict:
@@ -213,6 +223,11 @@ def main() -> int:
         get_keys_status=portfolio_keys_status,
         set_key=lambda name, value: portfolio_keys_set({name: value}),
         regenerate=_regenerate_sweep,
+        get_keys_recommend=portfolio_keys_recommend,
+        delete_key=portfolio_keys_delete,
+        backup_keys=portfolio_keys_backup,
+        restore_keys=portfolio_keys_restore,
+        list_backups=portfolio_keys_backups_list,
     )
 
     # ── Build the MCP-HTTP app ────────────────────────────────────────
