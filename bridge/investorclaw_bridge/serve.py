@@ -192,6 +192,7 @@ def main() -> int:
         portfolio_keys_restore,
         portfolio_keys_backups_list,
     )
+    from .mcp.tools.upgrade import portfolio_export, portfolio_import
     from .mcp._runtime import _run_ic_engine
     from .portfolio_templates import list_templates, apply_template
     from . import provider_routing as _provider_routing
@@ -239,6 +240,8 @@ def main() -> int:
         set_provider_routing=lambda primary, chain: _provider_routing.save_routing(
             primary=primary, fallback_chain=chain
         ),
+        export_config=portfolio_export,
+        import_config=portfolio_import,
     )
 
     # ── Build the MCP-HTTP app ────────────────────────────────────────

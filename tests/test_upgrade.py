@@ -319,3 +319,116 @@ async def test_export_then_import_round_trip(tmp_path, monkeypatch):
     assert (dst_pdir / "main.csv").read_text() == "Symbol,Quantity\nAAPL,10\nMSFT,5\n"
     assert (dst_pdir / "two.csv").read_text() == "Symbol,Quantity\nGOOGL,3\n"
     assert json.loads(dst_sm.read_text()) == {"persona": "Stonk", "v": 1}
+
+
+# ── v2 schema (provider_routing) ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_export_schema_is_v2(tmp_path, monkeypatch):
+    """v4.3.0+ exports should pin schema_version=ic-engine-export/v2."""
+    monkeypatch.setenv("IC_PORTFOLIO_DIR", str(tmp_path / "p"))
+    monkeypatch.setenv("IC_STONKMODE_FILE", str(tmp_path / "sm.json"))
+    monkeypatch.setenv("IC_PROVIDER_ROUTING_FILE", str(tmp_path / "routing.env"))
+    monkeypatch.delenv("INVESTORCLAW_PRICE_PROVIDER", raising=False)
+    monkeypatch.delenv("INVESTORCLAW_FALLBACK_CHAIN", raising=False)
+
+    snap = await portfolio_export()
+    assert snap["schema_version"] == "ic-engine-export/v2"
+    assert "provider_routing" in snap
+
+
+@pytest.mark.asyncio
+async def test_export_includes_provider_routing(tmp_path, monkeypatch):
+    monkeypatch.setenv("IC_PORTFOLIO_DIR", str(tmp_path / "p"))
+    monkeypatch.setenv("IC_STONKMODE_FILE", str(tmp_path / "sm.json"))
+    monkeypatch.setenv("IC_PROVIDER_ROUTING_FILE", str(tmp_path / "routing.env"))
+    monkeypatch.delenv("INVESTORCLAW_PRICE_PROVIDER", raising=False)
+    monkeypatch.delenv("INVESTORCLAW_FALLBACK_CHAIN", raising=False)
+
+    from investorclaw_bridge import provider_routing as pr
+    pr.save_routing(primary="finnhub", fallback_chain=["yfinance", "massive"])
+
+    snap = await portfolio_export()
+    assert snap["provider_routing"] == {
+        "primary": "finnhub",
+        "fallback_chain": ["yfinance", "massive"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_import_accepts_v1_snapshot_for_backwards_compat(tmp_path, monkeypatch):
+    """v4.3.0+ importer must accept v1 snapshots produced by v4.1.39 - v4.2.1."""
+    monkeypatch.setenv("IC_PORTFOLIO_DIR", str(tmp_path / "p"))
+    monkeypatch.setenv("IC_STONKMODE_FILE", str(tmp_path / "sm.json"))
+
+    v1_snap = {
+        "schema_version": "ic-engine-export/v1",
+        "portfolios": [
+            {"filename": "p.csv", "encoding": "utf-8",
+             "content": "Symbol,Qty\nAAPL,1\n"}
+        ],
+        "stonkmode_state": None,
+        "configured_keys": ["TOGETHER_API_KEY"],
+    }
+    result = await portfolio_import(v1_snap)
+    assert "error" not in result
+    assert result["imported"]["portfolios"] == 1
+    assert result["imported"].get("provider_routing") is False
+
+
+@pytest.mark.asyncio
+async def test_import_restores_provider_routing(tmp_path, monkeypatch):
+    monkeypatch.setenv("IC_PORTFOLIO_DIR", str(tmp_path / "p"))
+    monkeypatch.setenv("IC_STONKMODE_FILE", str(tmp_path / "sm.json"))
+    monkeypatch.setenv("IC_PROVIDER_ROUTING_FILE", str(tmp_path / "routing.env"))
+    monkeypatch.delenv("INVESTORCLAW_PRICE_PROVIDER", raising=False)
+    monkeypatch.delenv("INVESTORCLAW_FALLBACK_CHAIN", raising=False)
+
+    v2_snap = {
+        "schema_version": "ic-engine-export/v2",
+        "portfolios": [],
+        "stonkmode_state": None,
+        "configured_keys": [],
+        "provider_routing": {
+            "primary": "massive",
+            "fallback_chain": ["finnhub", "alpha_vantage"],
+        },
+    }
+    result = await portfolio_import(v2_snap)
+    assert result["imported"]["provider_routing"] is True
+
+    from investorclaw_bridge import provider_routing as pr
+    out = pr.load_routing()
+    assert out["primary"] == "massive"
+    assert out["fallback_chain"] == ["finnhub", "alpha_vantage"]
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_unknown_schema_in_v3(tmp_path, monkeypatch):
+    """Unknown schema versions still reject — only v1 + v2 accepted."""
+    monkeypatch.setenv("IC_PORTFOLIO_DIR", str(tmp_path / "p"))
+    bad = {"schema_version": "ic-engine-export/v999", "portfolios": []}
+    result = await portfolio_import(bad)
+    assert result.get("error") == "schema_version_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_import_provider_routing_invalid_logs_warning(tmp_path, monkeypatch):
+    monkeypatch.setenv("IC_PORTFOLIO_DIR", str(tmp_path / "p"))
+    monkeypatch.setenv("IC_STONKMODE_FILE", str(tmp_path / "sm.json"))
+    monkeypatch.setenv("IC_PROVIDER_ROUTING_FILE", str(tmp_path / "routing.env"))
+
+    v2_snap = {
+        "schema_version": "ic-engine-export/v2",
+        "portfolios": [],
+        "provider_routing": {
+            "primary": "bogus-provider",  # rejected by allowlist
+            "fallback_chain": [],
+        },
+    }
+    result = await portfolio_import(v2_snap)
+    # Import succeeds overall, but routing was rejected → not restored
+    assert "error" not in result
+    assert result["imported"]["provider_routing"] is False
+    assert any("provider_routing restore rejected" in w for w in result["warnings"])

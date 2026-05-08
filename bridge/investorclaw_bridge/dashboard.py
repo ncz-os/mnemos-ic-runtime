@@ -28,6 +28,7 @@ import glob as _glob
 import json as _json
 import os
 import pathlib
+import re
 from typing import Any, Dict
 
 from fastapi import FastAPI, Request
@@ -1685,6 +1686,37 @@ or <code>auto</code> = engine default routing.</p>
 <div class="section-card">
 {routing_form}
 </div>
+
+<h2>Configuration snapshot</h2>
+<p class="muted">Download a JSON snapshot containing all portfolios,
+stonkmode persona state, provider routing, and configured key NAMES
+(values are NOT included — keys move between hosts via the encrypted
+backup above). Restoring overwrites portfolios + routing + persona
+on the target.</p>
+<div class="section-card">
+  <p>
+    <a href="/dashboard/settings/export.json" class="primary"
+       style="background:#1f6feb;">Download config snapshot</a>
+  </p>
+  <p class="muted" style="font-size:12px;">
+    Filename: <code>investorclaw-config-&lt;version&gt;-&lt;timestamp&gt;.json</code>.
+    Combine with the encrypted keys backup above for a complete
+    cross-host migration kit.
+  </p>
+</div>
+
+<h3>Restore from snapshot</h3>
+<div class="section-card">
+  <form action="/dashboard/settings/import_config" method="post"
+    enctype="multipart/form-data"
+    onsubmit="return confirm('Restore will overwrite portfolios + routing + stonkmode on this host. Continue?');">
+    <div class="row">
+      <label>Snapshot JSON file</label>
+      <input type="file" name="snapshot_file" required accept=".json,application/json">
+    </div>
+    <button type="submit" style="background:#d29922;">Restore from snapshot</button>
+  </form>
+</div>
 """
     return _shell("settings", body, title="Settings")
 
@@ -1809,6 +1841,8 @@ def attach_to(
     apply_template=None,
     get_provider_routing=None,
     set_provider_routing=None,
+    export_config=None,
+    import_config=None,
 ) -> None:
     """Mount all dashboard tab routes on the given FastAPI app.
 
@@ -1847,6 +1881,14 @@ def attach_to(
     set_provider_routing : optional callable(primary, fallback_chain) -> dict
         Persists the routing config and mirrors it into ``os.environ``.
         Returns ``{"saved": True, ...}`` or ``{"error": "..."}``.
+    export_config : optional async callable -> dict
+        Returns the v4.3.0 config-snapshot JSON (delegates to
+        ``portfolio_export``). Surfaced as a browser download via
+        GET /dashboard/settings/export.json.
+    import_config : optional async callable(snapshot: dict) -> dict
+        Restores from a config-snapshot JSON (delegates to
+        ``portfolio_import``). Surfaced as a multipart upload via
+        POST /dashboard/settings/import_config.
     CSRF policy
         Mutating dashboard POSTs compare any Origin or Referer header against
         the request Host and reject mismatches with a 303 redirect. This keeps
@@ -2127,6 +2169,116 @@ def attach_to(
             saved_chain = result.get("fallback_chain", chain)
             chain_str = ",".join(saved_chain) if saved_chain else "(none)"
             msg = f"Routing saved — primary: {saved_primary}, chain: {chain_str}"
+        return RedirectResponse(
+            url=f"/dashboard/settings?message={quote(msg)}",
+            status_code=303,
+        )
+
+    @app.get("/dashboard/settings/export.json", include_in_schema=False)
+    async def settings_export_config(request: Request):
+        """Stream the portfolio_export() JSON snapshot as a downloadable file.
+
+        Read-only endpoint — GET, no CSRF needed (no state mutation).
+        Filename includes timestamp + version so the user can keep
+        multiple snapshots side-by-side.
+        """
+        from fastapi.responses import JSONResponse
+        if export_config is None:
+            return JSONResponse(
+                {"error": "config_export_not_wired"}, status_code=503
+            )
+        snapshot = await _maybe_await(export_config())
+        version = re.sub(
+            r"[^A-Za-z0-9._-]",
+            "",
+            str(snapshot.get("engine_version") or _running_version()),
+        ) or "unknown"
+        ts = re.sub(
+            r"[^A-Za-z0-9._-]",
+            "",
+            _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+        ) or "unknown"
+        filename = f"investorclaw-config-{version}-{ts}.json"
+        return JSONResponse(
+            snapshot,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
+    @app.post("/dashboard/settings/import_config", include_in_schema=False)
+    async def settings_import_config(request: Request) -> RedirectResponse:
+        from urllib.parse import quote
+        if redirect := _csrf_redirect(request, "/dashboard/settings"):
+            return redirect
+        if import_config is None:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote('Config import not wired')}",
+                status_code=303,
+            )
+        try:
+            form = await request.form()
+        except Exception as e:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote('Form parse failed: ' + str(e))}",
+                status_code=303,
+            )
+        upload = form.get("snapshot_file")
+        if upload is None or not getattr(upload, "filename", ""):
+            return RedirectResponse(
+                url="/dashboard/settings?message=No+snapshot+file+selected",
+                status_code=303,
+            )
+        # Cap covers the full multipart snapshot upload; portfolio_export's
+        # per-portfolio-file cap in upgrade.py is smaller (~5 MB).
+        max_bytes = _MAX_UPLOAD_BYTES
+        chunks = []
+        total = 0
+        while True:
+            chunk = await upload.read(1 << 20)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                return RedirectResponse(
+                    url=f"/dashboard/settings?message={quote(f'Snapshot too large: > {max_bytes//1024//1024} MB cap')}",
+                    status_code=303,
+                )
+            chunks.append(chunk)
+        body = b"".join(chunks)
+        try:
+            snapshot = _json.loads(body)
+        except (_json.JSONDecodeError, RecursionError) as e:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote('Snapshot JSON parse failed: ' + str(e))}",
+                status_code=303,
+            )
+        except Exception as e:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote('Snapshot JSON parse failed: ' + str(e))}",
+                status_code=303,
+            )
+        result = await _maybe_await(import_config(snapshot))
+        if "error" in result:
+            err = result.get("detail") or result.get("error")
+            msg = f"Snapshot import failed: {err}"
+        else:
+            imported = result.get("imported", {})
+            n_p = imported.get("portfolios", 0)
+            n_sm = "yes" if imported.get("stonkmode") else "no"
+            n_pr = "yes" if imported.get("provider_routing") else "no"
+            warns = len(result.get("warnings") or [])
+            msg = (
+                f"Snapshot imported — portfolios:{n_p}, stonkmode:{n_sm}, "
+                f"routing:{n_pr}, warnings:{warns}"
+            )
+            # Fire regenerate sweep so the new state is materialized.
+            if regenerate is not None:
+                try:
+                    import asyncio as _asyncio
+                    _asyncio.create_task(_safe_call(regenerate))
+                except Exception:
+                    pass
         return RedirectResponse(
             url=f"/dashboard/settings?message={quote(msg)}",
             status_code=303,

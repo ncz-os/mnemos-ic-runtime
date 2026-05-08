@@ -190,7 +190,11 @@ def _stonkmode_path() -> Path:
     return Path(os.environ.get("IC_STONKMODE_FILE", "/data/stonkmode.json"))
 
 
-_EXPORT_SCHEMA = "ic-engine-export/v1"
+_EXPORT_SCHEMA = "ic-engine-export/v2"
+# v4.3.0+ writers emit v2 (which adds provider_routing). v4.1.39 - v4.2.1
+# emit v1. The importer below accepts either; v2-only fields are ignored
+# when an older snapshot is loaded.
+_ACCEPTED_SCHEMAS = frozenset({"ic-engine-export/v1", "ic-engine-export/v2"})
 _MAX_PORTFOLIO_BYTES = 5 * 1024 * 1024  # 5 MB per file — sanity cap
 
 
@@ -219,6 +223,7 @@ async def portfolio_export() -> dict[str, Any]:
         "portfolios": [],
         "stonkmode_state": None,
         "configured_keys": [],
+        "provider_routing": None,
         "warnings": [
             (
                 "API key VALUES are NOT included in this export (security). "
@@ -286,6 +291,20 @@ async def portfolio_export() -> dict[str, Any]:
             f"keys_status query failed: {type(exc).__name__}: {exc}"
         )
 
+    # Provider routing (v4.2.0+) — primary + fallback chain. Embed the
+    # current effective config; the v1 schema didn't carry this field.
+    try:
+        from ... import provider_routing as _pr
+        rinfo = _pr.load_routing()
+        snapshot["provider_routing"] = {
+            "primary": rinfo.get("primary"),
+            "fallback_chain": list(rinfo.get("fallback_chain") or []),
+        }
+    except Exception as exc:
+        snapshot["warnings"].append(
+            f"provider_routing query failed: {type(exc).__name__}: {exc}"
+        )
+
     logger.info(
         "upgrade.export",
         portfolios=len(snapshot["portfolios"]),
@@ -327,11 +346,11 @@ async def portfolio_import(snapshot: dict[str, Any]) -> dict[str, Any]:
         return {**result, "error": "snapshot_must_be_dict"}
 
     schema = snapshot.get("schema_version")
-    if schema != _EXPORT_SCHEMA:
+    if schema not in _ACCEPTED_SCHEMAS:
         return {
             **result,
             "error": "schema_version_mismatch",
-            "expected": _EXPORT_SCHEMA,
+            "expected": sorted(_ACCEPTED_SCHEMAS),
             "got": schema,
         }
 
@@ -367,6 +386,27 @@ async def portfolio_import(snapshot: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             result["warnings"].append(
                 f"stonkmode write failed: {type(exc).__name__}: {exc}"
+            )
+
+    # Provider routing (v4.2.0+) — only present in v2 snapshots.
+    routing = snapshot.get("provider_routing")
+    result["imported"]["provider_routing"] = False
+    if isinstance(routing, dict):
+        try:
+            from ... import provider_routing as _pr
+            primary = routing.get("primary")
+            chain = routing.get("fallback_chain") or []
+            save_result = _pr.save_routing(primary=primary, fallback_chain=chain)
+            if "error" in save_result:
+                result["warnings"].append(
+                    f"provider_routing restore rejected: "
+                    f"{save_result.get('detail') or save_result['error']}"
+                )
+            else:
+                result["imported"]["provider_routing"] = True
+        except Exception as exc:
+            result["warnings"].append(
+                f"provider_routing restore failed: {type(exc).__name__}: {exc}"
             )
 
     result["configured_keys_in_snapshot"] = list(snapshot.get("configured_keys") or [])
@@ -438,8 +478,9 @@ UPGRADE_TOOLS: dict[str, dict[str, Any]] = {
             "base64 if binary) and stonkmode persona state. EXCLUDES API key "
             "values (security — keys are plaintext secrets that persist via "
             "the /data volume mount across container replacements). The "
-            "snapshot is the input shape for portfolio_import; both pin "
-            "schema_version=ic-engine-export/v1 for forward-compat."
+            "snapshot is the input shape for portfolio_import. Writers emit "
+            "schema_version=ic-engine-export/v2; the importer accepts v1 and "
+            "v2 snapshots for forward-compat."
         ),
         parameters={},
         required=[],
@@ -451,15 +492,16 @@ UPGRADE_TOOLS: dict[str, dict[str, Any]] = {
             "active /data volume. Writes portfolios → /data/portfolios/ and "
             "stonkmode_state → /data/stonkmode.json. Does NOT touch keys — "
             "re-set via portfolio_keys_set after import (export never "
-            "carries values). Existing files are overwritten. Validates "
-            "schema_version=ic-engine-export/v1 strictly."
+            "carries values). Existing files are overwritten. Accepts "
+            "schema_version=ic-engine-export/v1 and ic-engine-export/v2."
         ),
         parameters={
             "snapshot": {
                 "type": "object",
                 "description": (
-                    "The JSON snapshot returned by portfolio_export. Must "
-                    "have schema_version=ic-engine-export/v1."
+                    "The JSON snapshot returned by portfolio_export. Current "
+                    "exports use schema_version=ic-engine-export/v2; v1 "
+                    "snapshots are also accepted."
                 ),
             },
         },

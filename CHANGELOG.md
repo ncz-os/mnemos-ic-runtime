@@ -9,6 +9,75 @@ Distribution-edge artifacts (`SKILL.md`, `compose.yml`, `install.yaml`,
 `agent-skills/**`) are MIT-0; substantive code (bridge, dashboard,
 Dockerfile, tests) is Apache 2.0.
 
+## [4.3.0] — 2026-05-08
+
+### Added
+
+- **Configuration snapshot — browser export/import.** Settings tab
+  gains a "Configuration snapshot" section pairing the existing
+  v4.1.39 `portfolio_export` / `portfolio_import` MCP tools with
+  browser-driven download and upload:
+  - **Download** — GET `/dashboard/settings/export.json` streams
+    the snapshot as a file download with
+    `Content-Disposition: attachment; filename=investorclaw-config-<version>-<timestamp>.json`.
+    Filename version + timestamp are sanitized to `[A-Za-z0-9._-]`
+    before interpolation (defensive against IC_ENGINE_VERSION
+    injection).
+  - **Restore** — POST `/dashboard/settings/import_config`
+    accepts a multipart upload, parses with size cap (50 MB) and
+    `JSONDecodeError` / `RecursionError` guards, delegates to
+    `portfolio_import`, and queues a regenerate sweep so the new
+    state materializes without a manual refresh.
+
+  Pairs naturally with the v4.1.40 encrypted keys backup — the
+  combination is a complete cross-host migration kit (config
+  snapshot for portfolios + routing + persona, encrypted backup
+  for keys).
+
+- **Snapshot schema bumped to v2** (`ic-engine-export/v2`) — adds a
+  `provider_routing` field carrying the active primary + fallback
+  chain. Importer accepts both v1 and v2 (forward-compat with
+  v4.1.39 - v4.2.1 exports). v1 snapshots imported into a v4.3.0+
+  bridge skip the routing step gracefully; v2 snapshots imported
+  into a v4.1.39 - v4.2.1 bridge will be rejected with
+  `schema_version_mismatch` — that's expected (export from the
+  newer version when migrating to it).
+
+### Security
+
+- **Filename injection in Content-Disposition.** Version + timestamp
+  components in the export download filename are now sanitized via
+  `re.sub` allowlist before interpolation. CR/LF or quote
+  characters in `IC_ENGINE_VERSION` cannot break the response
+  header.
+- **JSON parse hardening** on import. `RecursionError` and
+  `JSONDecodeError` are caught and surface as a redirect-error
+  message instead of crashing the bridge process.
+- **Per-portfolio file cap** documented inline at the import handler
+  so the relationship between the 50 MB multipart cap and the 5 MB
+  per-file export cap is clear to future readers.
+
+### Changed
+
+- **MCP tool descriptors updated** for `portfolio_export` and
+  `portfolio_import` to reflect that writers emit
+  `ic-engine-export/v2` and the importer accepts both v1 and v2.
+- `_dt.datetime.utcnow()` → `_dt.datetime.now(_dt.timezone.utc)` —
+  Python 3.12+ deprecation cleanup.
+
+### Notes
+
+- v4.3.0 is bridge-only: `IC_ENGINE_REF` unchanged at
+  `11adc63c00e215c36aef9ffaf985555eb2f83bd6`. Engine source is
+  identical to v4.1.38–v4.2.1.
+- Codex adversarial review iterated 2 rounds before APPROVE per
+  CLAUDE.md directive 6 + 7 — round 1 surfaced 5 warnings + 1
+  note (1 skipped as known auth posture); round 2 fixed all
+  others; round 3 APPROVE.
+- 148 non-environmental tests passing (was 137 in v4.2.1 → +11
+  new tests covering v2 schema, provider_routing roundtrip, v1
+  backward-compat, dashboard endpoint smoke).
+
 ## [4.2.1] — 2026-05-08
 
 ### Added
