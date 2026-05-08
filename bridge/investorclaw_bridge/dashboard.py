@@ -1310,6 +1310,7 @@ def _settings_tab(
     get_keys_status,
     recommendations: list | None = None,
     backups: list | None = None,
+    templates: list | None = None,
     message: str = "",
 ) -> str:
     status = get_keys_status()
@@ -1332,6 +1333,7 @@ def _settings_tab(
         signup_url = rec.get("signup_url", "")
         safe_signup_url = _http_signup_url(signup_url)
         is_configured = name in configured
+        js_safe_name = _h(_json.dumps(name))
 
         status_cell = (
             '<span class="kpi-positive">configured</span>'
@@ -1346,7 +1348,7 @@ def _settings_tab(
         delete_cell = (
             f'<form action="/dashboard/settings/keys/delete" method="post" '
             f'style="margin:0;display:inline;" '
-            f'onsubmit="return confirm(\'Delete {_h(name)}?\');">'
+            f'onsubmit="return confirm(\'Delete \' + {js_safe_name} + \'?\');">'
             f'<input type="hidden" name="key_name" value="{_h(name)}">'
             f'<button type="submit" style="background:#21262d;color:#f85149;'
             f'border:1px solid #30363d;padding:4px 10px;border-radius:4px;'
@@ -1471,6 +1473,49 @@ def _settings_tab(
   <button type="submit">Upload &amp; refresh</button>
 </form>"""
 
+    # Pre-built templates — let first-time users start with a canonical
+    # allocation (Boglehead 3-fund, 60/40, All-Weather, etc.) before they
+    # have a real broker statement to upload.
+    templates = templates or []
+    if templates:
+        template_cards = []
+        for t in templates:
+            slug = _h(t.get("slug", ""))
+            js_safe_name = _h(_json.dumps(t.get("name", "")))
+            template_cards.append(
+                f'<div style="background:#161b22;border:1px solid #30363d;'
+                f'border-radius:6px;padding:14px;margin-bottom:12px;">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'gap:12px;flex-wrap:wrap;">'
+                f'<div style="flex:1;min-width:240px;">'
+                f'<h3 style="margin:0 0 4px 0;font-size:15px;">{_h(t.get("name", ""))}</h3>'
+                f'<p class="muted" style="margin:0 0 6px 0;">{_h(t.get("description", ""))}</p>'
+                f'<p style="margin:0;font-size:12px;color:#8b949e;">'
+                f'<code>{_h(t.get("positions", ""))}</code> '
+                f'<span style="opacity:0.7;">— ~${t.get("notional", 0):,.0f} starter</span>'
+                f'</p>'
+                f'</div>'
+                f'<form action="/dashboard/settings/template" method="post" style="margin:0;"'
+                f' onsubmit="return confirm(\'Drop the \' + {js_safe_name} + '
+                f'\' template into /data/portfolios/ and queue regenerate?\');">'
+                f'<input type="hidden" name="slug" value="{slug}">'
+                f'<button type="submit" style="background:#1f6feb;color:#fff;border:0;'
+                f'padding:8px 14px;border-radius:6px;font-weight:600;cursor:pointer;">'
+                f'Load template</button>'
+                f'</form>'
+                f'</div>'
+                f'<details style="margin-top:8px;">'
+                f'<summary style="cursor:pointer;color:#8b949e;font-size:12px;">Why this allocation?</summary>'
+                f'<p style="margin:6px 0 0 0;font-size:13px;color:#c9d1d9;">{_h(t.get("rationale", ""))}</p>'
+                f'</details>'
+                f'</div>'
+            )
+        templates_block = "".join(template_cards)
+    else:
+        templates_block = (
+            '<div class="empty">No starter templates available.</div>'
+        )
+
     body = f"""<h2>Settings — provider keys</h2>
 {msg_html}
 <p class="muted">Keys persist to <code>/data/keys.env</code> inside the named Docker volume,
@@ -1515,6 +1560,15 @@ broker statement here; the upload triggers a refresh and the new positions appea
 <div class="section-card">
 {upload_form}
 </div>
+
+<h2>Starter templates</h2>
+<p class="muted">No broker statement yet? Load a canonical allocation
+to explore the dashboard. Each template drops a starter CSV into
+<code>/data/portfolios/</code> and queues a regenerate. Templates are
+not investment advice — they are well-known canonical allocations
+(Boglehead, 60/40, Ray-Dalio All-Weather) surfaced as starting points
+only.</p>
+{templates_block}
 """
     return _shell("settings", body, title="Settings")
 
@@ -1635,6 +1689,8 @@ def attach_to(
     backup_keys=None,
     restore_keys=None,
     list_backups=None,
+    list_templates=None,
+    apply_template=None,
 ) -> None:
     """Mount all dashboard tab routes on the given FastAPI app.
 
@@ -1660,6 +1716,13 @@ def attach_to(
         Restores keys from an encrypted backup file.
     list_backups : optional callable -> dict
         Returns ``{"backups": [...]}`` with metadata (no decrypt).
+    list_templates : optional callable -> list[dict]
+        Returns the pre-built portfolio template registry for the
+        Settings tab "Starter templates" section. Each entry: ``slug``,
+        ``name``, ``description``, ``rationale``, ``positions`` summary.
+    apply_template : optional callable(slug) -> dict
+        Writes the template's CSV into ``/data/portfolios/`` and returns
+        ``{"applied": True, "filename"}`` or ``{"error": "..."}``.
     CSRF policy
         Mutating dashboard POSTs compare any Origin or Referer header against
         the request Host and reject mismatches with a 303 redirect. This keeps
@@ -1748,11 +1811,18 @@ def attach_to(
                 backups = backups_result.get("backups") or []
             except Exception:
                 backups = []
+        templates: list = []
+        if list_templates is not None:
+            try:
+                templates = await _maybe_await(list_templates()) or []
+            except Exception:
+                templates = []
         return HTMLResponse(
             _settings_tab(
                 lambda: status,
                 recommendations=recommendations,
                 backups=backups,
+                templates=templates,
                 message=message,
             )
         )
@@ -1860,6 +1930,44 @@ def attach_to(
         else:
             n = len(result.get("key_names") or [])
             msg = f"Restored {n} key{'s' if n != 1 else ''} from backup"
+        return RedirectResponse(
+            url=f"/dashboard/settings?message={quote(msg)}",
+            status_code=303,
+        )
+
+    @app.post("/dashboard/settings/template", include_in_schema=False)
+    async def settings_apply_template(request: Request) -> RedirectResponse:
+        from urllib.parse import quote
+        if redirect := _csrf_redirect(request, "/dashboard/settings"):
+            return redirect
+        form = await request.form()
+        slug = (form.get("slug") or "").strip()
+        if not slug:
+            return RedirectResponse(
+                url="/dashboard/settings?message=Missing+template+slug",
+                status_code=303,
+            )
+        if apply_template is None:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote('Templates not wired')}",
+                status_code=303,
+            )
+        result = await _maybe_await(apply_template(slug))
+        if "error" in result:
+            err = result.get("detail") or result.get("error")
+            msg = f"Template apply failed: {err}"
+        else:
+            fname = result.get("filename", "template.csv")
+            name = result.get("name", slug)
+            n_rows = result.get("rows", 0)
+            msg = f"Loaded {name} ({n_rows} positions) → {fname}; refresh queued"
+            # Fire setup in the background — same pattern as upload.
+            if regenerate is not None:
+                try:
+                    import asyncio as _asyncio
+                    _asyncio.create_task(_safe_call(regenerate))
+                except Exception:
+                    pass
         return RedirectResponse(
             url=f"/dashboard/settings?message={quote(msg)}",
             status_code=303,

@@ -193,6 +193,7 @@ def main() -> int:
         portfolio_keys_backups_list,
     )
     from .mcp._runtime import _run_ic_engine
+    from .portfolio_templates import list_templates, apply_template
 
     async def _regenerate_sweep() -> dict:
         """Run the full data-refresh + analyzer sweep that backs every tab.
@@ -228,6 +229,8 @@ def main() -> int:
         backup_keys=portfolio_keys_backup,
         restore_keys=portfolio_keys_restore,
         list_backups=portfolio_keys_backups_list,
+        list_templates=list_templates,
+        apply_template=apply_template,
     )
 
     # ── Build the MCP-HTTP app ────────────────────────────────────────

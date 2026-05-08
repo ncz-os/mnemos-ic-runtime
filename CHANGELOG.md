@@ -9,6 +9,72 @@ Distribution-edge artifacts (`SKILL.md`, `compose.yml`, `install.yaml`,
 `agent-skills/**`) are MIT-0; substantive code (bridge, dashboard,
 Dockerfile, tests) is Apache 2.0.
 
+## [4.1.42] — 2026-05-07
+
+### Added
+
+- **Pre-built portfolio templates.** First-time users no longer need
+  a real broker statement to explore the dashboard. The Settings tab
+  gains a "Starter templates" section with five canonical allocations:
+  - **S&P 500 Indexer** — single-fund VOO position
+  - **Boglehead Three-Fund** — VTI / VXUS / BND
+  - **60/40 Stock-Bond** — VTI / BND
+  - **All-Weather (Dalio)** — VTI / TLT / IEI / GLD / DBC
+  - **Conservative Income** — BND / VYM / CASH
+
+  Each template is sized to a ~$100K starter portfolio using
+  representative late-2025 / early-2026 prices; the engine refreshes
+  prices on first regenerate, so exact starter values don't matter.
+  Loading a template drops a CSV at `template-<slug>.csv` into
+  `/data/portfolios/` (atomic write via tmp file + `os.replace`),
+  triggers a regenerate sweep, and the new positions appear in
+  Holdings. Each card has a collapsible "Why this allocation?"
+  rationale block.
+
+  Templates are NOT investment advice — they are well-known
+  canonical allocations cited in the Boglehead / Dalio /
+  classic-60-40 literature, surfaced as starting points only.
+  The dashboard disclaimer continues to apply.
+
+- **New module `bridge/investorclaw_bridge/portfolio_templates.py`**
+  exposes `list_templates()` (UI metadata, no row detail) and
+  `apply_template(slug, portfolio_dir)` (atomic CSV write with
+  path-traversal-safe slug validation via
+  `^[a-z0-9]+(?:-[a-z0-9]+)*$`).
+
+### Security
+
+- **JS-string escape gap in confirm() handlers** — both the
+  per-key delete row and the new template-load button used
+  `_h(name)` for the inline `onsubmit="return confirm('...')"`
+  attribute. `html.escape` does NOT encode `'`, so a future name
+  containing an apostrophe (e.g. `"Retiree's Choice"`) could break
+  out of the JS string literal. Both sites now use
+  `_h(json.dumps(name))` which encodes for both the JS-string and
+  HTML-attribute contexts simultaneously, killing apostrophe,
+  double-quote, backslash, and `</script>` injection vectors.
+
+- **Atomic CSV writes.** `apply_template()` writes to
+  `<dest>.tmp` first, then `os.replace()`s atomically into the
+  final path. A concurrent regenerate sweep that scans
+  `/data/portfolios/` can never observe a partially written
+  template CSV. On any exception during write, the `.tmp` file is
+  unlinked and any pre-existing destination is preserved
+  unchanged.
+
+### Notes
+
+- v4.1.42 is bridge-only: `IC_ENGINE_REF` unchanged at
+  `11adc63c00e215c36aef9ffaf985555eb2f83bd6`. Engine source is
+  identical to v4.1.38–v4.1.41.
+- Codex adversarial-review iterated four rounds before APPROVE
+  per CLAUDE.md directive 6 + 7 — round-1 surfaced both fixes
+  above, round-2 verified implementation, round-3 expanded
+  adversarial test coverage (4 new regression tests covering
+  full JS-injection payloads + pre-existing destination
+  preservation on write failure), round-4 APPROVE.
+- 117 non-environmental tests passing (was 113 in v4.1.41).
+
 ## [4.1.41] — 2026-05-07
 
 ### Added
