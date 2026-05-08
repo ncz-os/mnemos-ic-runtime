@@ -1311,6 +1311,7 @@ def _settings_tab(
     recommendations: list | None = None,
     backups: list | None = None,
     templates: list | None = None,
+    routing: dict | None = None,
     message: str = "",
 ) -> str:
     status = get_keys_status()
@@ -1516,6 +1517,64 @@ def _settings_tab(
             '<div class="empty">No starter templates available.</div>'
         )
 
+    # Provider routing section.
+    routing = routing or {}
+    valid_providers = routing.get("valid_providers", []) or []
+    current_primary = (routing.get("primary") or "auto").lower()
+    current_chain = routing.get("fallback_chain") or []
+
+    primary_options = ['<option value="auto">auto (engine default)</option>']
+    for p in valid_providers:
+        sel = " selected" if p == current_primary else ""
+        primary_options.append(
+            f'<option value="{_h(p)}"{sel}>{_h(p)}</option>'
+        )
+    chain_value = _h(",".join(current_chain))
+
+    routing_form = f"""<form action="/dashboard/settings/provider_routing" method="post">
+  <div class="row">
+    <label>Primary price provider (or <code>auto</code> for engine routing)</label>
+    <select name="primary">
+      {''.join(primary_options)}
+    </select>
+  </div>
+  <div class="row">
+    <label>Fallback chain (comma-separated, in order)</label>
+    <input type="text" name="fallback_chain" value="{chain_value}"
+      placeholder="yfinance,massive,finnhub" pattern="[a-zA-Z0-9_,\\s]*">
+    <p class="muted" style="margin-top:4px;font-size:12px;">
+      Valid: {", ".join(_h(p) for p in valid_providers) or "—"}.
+      Empty clears the override and uses the engine's per-operation
+      routing table.
+    </p>
+  </div>
+  <button type="submit">Save routing</button>
+</form>"""
+
+    if current_primary == "auto" and not current_chain:
+        routing_state = (
+            '<p class="muted">No override active — ic-engine uses its '
+            'default per-operation routing table (yfinance + massive + '
+            'finnhub depending on op type).</p>'
+        )
+    else:
+        bits = []
+        if current_primary != "auto":
+            bits.append(
+                f'Primary: <code style="color:#58a6ff;">{_h(current_primary)}</code>'
+            )
+        if current_chain:
+            bits.append(
+                'Fallback chain: <code>'
+                + " → ".join(_h(c) for c in current_chain)
+                + "</code>"
+            )
+        routing_state = (
+            '<div class="section-card"><p>'
+            + " · ".join(bits)
+            + "</p></div>"
+        )
+
     body = f"""<h2>Settings — provider keys</h2>
 {msg_html}
 <p class="muted">Keys persist to <code>/data/keys.env</code> inside the named Docker volume,
@@ -1569,6 +1628,16 @@ not investment advice — they are well-known canonical allocations
 (Boglehead, 60/40, Ray-Dalio All-Weather) surfaced as starting points
 only.</p>
 {templates_block}
+
+<h2>Provider routing</h2>
+<p class="muted">Override ic-engine's price-data fallback chain. Use
+this when you have a premium provider key (e.g. Massive / Polygon)
+and want it consulted first for every price + history fetch. Empty
+or <code>auto</code> = engine default routing.</p>
+{routing_state}
+<div class="section-card">
+{routing_form}
+</div>
 """
     return _shell("settings", body, title="Settings")
 
@@ -1691,6 +1760,8 @@ def attach_to(
     list_backups=None,
     list_templates=None,
     apply_template=None,
+    get_provider_routing=None,
+    set_provider_routing=None,
 ) -> None:
     """Mount all dashboard tab routes on the given FastAPI app.
 
@@ -1723,6 +1794,12 @@ def attach_to(
     apply_template : optional callable(slug) -> dict
         Writes the template's CSV into ``/data/portfolios/`` and returns
         ``{"applied": True, "filename"}`` or ``{"error": "..."}``.
+    get_provider_routing : optional callable -> dict
+        Returns ``{"primary", "fallback_chain", "valid_providers", ...}``
+        from ``provider_routing.load_routing`` (v4.2.0).
+    set_provider_routing : optional callable(primary, fallback_chain) -> dict
+        Persists the routing config and mirrors it into ``os.environ``.
+        Returns ``{"saved": True, ...}`` or ``{"error": "..."}``.
     CSRF policy
         Mutating dashboard POSTs compare any Origin or Referer header against
         the request Host and reject mismatches with a 303 redirect. This keeps
@@ -1817,12 +1894,19 @@ def attach_to(
                 templates = await _maybe_await(list_templates()) or []
             except Exception:
                 templates = []
+        routing: dict = {}
+        if get_provider_routing is not None:
+            try:
+                routing = await _maybe_await(get_provider_routing()) or {}
+            except Exception:
+                routing = {}
         return HTMLResponse(
             _settings_tab(
                 lambda: status,
                 recommendations=recommendations,
                 backups=backups,
                 templates=templates,
+                routing=routing,
                 message=message,
             )
         )
@@ -1968,6 +2052,34 @@ def attach_to(
                     _asyncio.create_task(_safe_call(regenerate))
                 except Exception:
                     pass
+        return RedirectResponse(
+            url=f"/dashboard/settings?message={quote(msg)}",
+            status_code=303,
+        )
+
+    @app.post("/dashboard/settings/provider_routing", include_in_schema=False)
+    async def settings_provider_routing(request: Request) -> RedirectResponse:
+        from urllib.parse import quote
+        if redirect := _csrf_redirect(request, "/dashboard/settings"):
+            return redirect
+        if set_provider_routing is None:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote('Provider routing not wired')}",
+                status_code=303,
+            )
+        form = await request.form()
+        primary = (form.get("primary") or "").strip()
+        chain_raw = (form.get("fallback_chain") or "").strip()
+        chain = [c.strip() for c in chain_raw.split(",") if c.strip()]
+        result = await _maybe_await(set_provider_routing(primary, chain))
+        if "error" in result:
+            err = result.get("detail") or result.get("error")
+            msg = f"Routing save failed: {err}"
+        else:
+            saved_primary = result.get("primary", primary)
+            saved_chain = result.get("fallback_chain", chain)
+            chain_str = ",".join(saved_chain) if saved_chain else "(none)"
+            msg = f"Routing saved — primary: {saved_primary}, chain: {chain_str}"
         return RedirectResponse(
             url=f"/dashboard/settings?message={quote(msg)}",
             status_code=303,

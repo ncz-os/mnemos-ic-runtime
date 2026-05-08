@@ -9,6 +9,75 @@ Distribution-edge artifacts (`SKILL.md`, `compose.yml`, `install.yaml`,
 `agent-skills/**`) are MIT-0; substantive code (bridge, dashboard,
 Dockerfile, tests) is Apache 2.0.
 
+## [4.2.0] — 2026-05-08
+
+### Added
+
+- **Provider routing UI in Settings tab.** Override ic-engine's
+  price-data fallback chain from the dashboard without rebuilding
+  the container or editing keys.env. Two settings:
+  - **Primary provider** — dropdown of `auto / finnhub / yfinance /
+    massive / polygon / alpha_vantage / newsapi / marketaux /
+    frankfurter / treasury_fiscaldata`. `auto` lets the engine's
+    per-operation routing table apply (the default).
+  - **Fallback chain** — comma-separated, ordered list of provider
+    names. Empty clears the override.
+
+  Use case: when you have a premium provider key (e.g. Massive /
+  Polygon Starter+), set it primary so every quote + history fetch
+  consults it first. Falls back through the chain on quota
+  exhaustion or per-symbol miss.
+
+  Persists to `/data/provider_routing.env` (atomic write via
+  `tempfile.NamedTemporaryFile` + `os.replace`, mode 0644). The
+  bridge mirrors the values into `os.environ` so the next ic-engine
+  subprocess inherits them — no restart required. At bridge startup
+  `hydrate_environ_from_file()` populates `os.environ` from the
+  persisted file (using `setdefault` so compose / quadlet
+  `Environment=` entries always win at the OS level).
+
+- **New module `bridge/investorclaw_bridge/provider_routing.py`**
+  exposes `load_routing()`, `save_routing(primary, fallback_chain)`,
+  `valid_providers()`, and `hydrate_environ_from_file()`. Provider
+  names validated against an allowlist mirroring ic-engine's
+  `PROVIDER_CLASSES` registry; values are case-normalized and
+  whitespace-stripped.
+
+### Security
+
+- **Persisted-file validation on load.** Both `load_routing()` and
+  `hydrate_environ_from_file()` validate values read from
+  `/data/provider_routing.env` against the provider allowlist before
+  applying them. A manually-edited or corrupted file with an
+  unknown provider name is logged as
+  `provider_routing.invalid_persisted_value` and skipped — never
+  propagates into `os.environ` or subprocess env. The dashboard
+  write path was already validated; this closes the gap on the
+  read path.
+
+- **Concurrent-write race fix.** `_atomic_write` now uses
+  `tempfile.NamedTemporaryFile(dir=same_dir, delete=False,
+  suffix=".tmp")` to get a unique temp path per write, eliminating
+  the collision two simultaneous dashboard saves would have had on
+  a fixed `<file>.tmp` sibling.
+
+### Notes
+
+- v4.2.0 is bridge-only: `IC_ENGINE_REF` unchanged at
+  `11adc63c00e215c36aef9ffaf985555eb2f83bd6`. Engine source is
+  identical to v4.1.38–v4.1.42.
+- New contract test imports `ic_engine.providers.price_provider.PROVIDER_CLASSES`
+  to detect drift between the bridge's allowlist and the engine's
+  registry; `pytest.skip` when ic_engine isn't importable so
+  STUDIO-only test runs stay green.
+- Codex adversarial review iterated 3 rounds before APPROVE per
+  CLAUDE.md directive 6 + 7 — round 1 surfaced 1 MEDIUM
+  (load-path validation gap) + 2 LOWs (allowlist drift, tmp-path
+  race), round 2 fixed all three, round 3 caught a stale
+  doc-comment, round 4 APPROVE.
+- 137 non-environmental tests passing (was 117 in v4.1.42), with
+  20 new tests covering provider routing.
+
 ## [4.1.42] — 2026-05-07
 
 ### Added

@@ -194,6 +194,10 @@ def main() -> int:
     )
     from .mcp._runtime import _run_ic_engine
     from .portfolio_templates import list_templates, apply_template
+    from . import provider_routing as _provider_routing
+    # Hydrate os.environ from the persisted routing file (if any) so the
+    # first ic-engine subprocess inherits the dashboard-saved override.
+    _provider_routing.hydrate_environ_from_file()
 
     async def _regenerate_sweep() -> dict:
         """Run the full data-refresh + analyzer sweep that backs every tab.
@@ -231,6 +235,10 @@ def main() -> int:
         list_backups=portfolio_keys_backups_list,
         list_templates=list_templates,
         apply_template=apply_template,
+        get_provider_routing=_provider_routing.load_routing,
+        set_provider_routing=lambda primary, chain: _provider_routing.save_routing(
+            primary=primary, fallback_chain=chain
+        ),
     )
 
     # ── Build the MCP-HTTP app ────────────────────────────────────────
