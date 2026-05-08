@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import os
 import re
-import stat
 from html import escape
 from pathlib import Path
 
@@ -28,6 +27,8 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 import structlog
+
+from .key_resolver import KeysFileTooPermissiveError, load_keys_env
 
 logger = structlog.get_logger("investorclaw_bridge.setup")
 
@@ -104,26 +105,18 @@ _VALID_KEY_NAME = re.compile(r"^[A-Z][A-Z0-9_]+$")
 
 
 def _read_existing_keys() -> dict[str, str]:
-    """Read keys.env if present (regardless of mode — UX wins over strict
-    perm check during setup; key_resolver enforces 0600 at runtime).
-
-    For display purposes only — masks values to last 4 chars.
-    """
-    if not KEYS_FILE.exists():
-        return {}
-    keys: dict[str, str] = {}
+    """Read keys.env if present, enforcing the canonical 0600 mode check."""
     try:
-        for raw in KEYS_FILE.read_text().splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            keys[k.strip()] = v.strip().strip('"').strip("'")
+        return load_keys_env(KEYS_FILE)
+    except KeysFileTooPermissiveError as exc:
+        logger.warning(
+            "setup.keys_file_too_permissive",
+            path=str(KEYS_FILE),
+            error=str(exc),
+        )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     except OSError:
-        pass
-    return keys
+        return {}
 
 
 def _save_keys(updates: dict[str, str]) -> None:

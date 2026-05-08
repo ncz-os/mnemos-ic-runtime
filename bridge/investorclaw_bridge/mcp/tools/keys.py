@@ -24,10 +24,12 @@ catalogue in setup_api.py and rebuilding the image.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from .. import _runtime  # for logger
 from .._runtime import logger
+from ...key_resolver import KeysFileTooPermissiveError, load_keys_env
 
 
 _ALLOWLIST: set[str] | None = None
@@ -57,25 +59,19 @@ def _allowlist() -> set[str]:
 
 
 def _read_existing() -> dict[str, str]:
-    """Delegate to setup_api._read_existing_keys (or a thin reimplementation
-    if setup_api isn't importable). Returns {KEY_NAME: VALUE}.
-    """
+    """Read existing keys, refusing overly permissive keys.env files."""
+    keys_file = Path(os.environ.get("IC_KEYS_FILE", "/data/keys.env"))
     try:
-        from investorclaw_bridge.setup_api import _read_existing_keys
-        return _read_existing_keys()
-    except Exception:
-        from pathlib import Path
-        keys_file = Path(os.environ.get("IC_KEYS_FILE", "/data/keys.env"))
-        if not keys_file.exists():
-            return {}
-        keys: dict[str, str] = {}
-        for raw in keys_file.read_text().splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            keys[k.strip()] = v.strip().strip('"').strip("'")
-        return keys
+        return load_keys_env(keys_file)
+    except KeysFileTooPermissiveError as exc:
+        logger.warning(
+            "mcp.keys_file_too_permissive",
+            path=str(keys_file),
+            error=str(exc),
+        )
+        return {}
+    except OSError:
+        return {}
 
 
 def _persist(updates: dict[str, str]) -> None:

@@ -199,6 +199,7 @@ def main() -> int:
     # Hydrate os.environ from the persisted routing file (if any) so the
     # first ic-engine subprocess inherits the dashboard-saved override.
     _provider_routing.hydrate_environ_from_file()
+    from . import provider_diagnostics as _provider_diagnostics
 
     async def _regenerate_sweep() -> dict:
         """Run the full data-refresh + analyzer sweep that backs every tab.
@@ -242,6 +243,8 @@ def main() -> int:
         ),
         export_config=portfolio_export,
         import_config=portfolio_import,
+        diagnostics_check=_provider_diagnostics.check_provider,
+        diagnostics_supported=_provider_diagnostics.supported_providers,
     )
 
     # ── Build the MCP-HTTP app ────────────────────────────────────────

@@ -1360,6 +1360,7 @@ def _settings_tab(
     backups: list | None = None,
     templates: list | None = None,
     routing: dict | None = None,
+    diagnostics: dict | None = None,
     message: str = "",
 ) -> str:
     status = get_keys_status()
@@ -1599,6 +1600,90 @@ def _settings_tab(
   <button type="submit">Save routing</button>
 </form>"""
 
+    # Provider diagnostics — render the "last-test" panel with a
+    # per-provider Test button. `diagnostics` is a {provider_name:
+    # last_result_dict} mapping; missing entries render as "not tested
+    # yet". Only diagnostics for providers in the supported registry
+    # surface here.
+    diagnostics = diagnostics or {}
+    supported = diagnostics.get("supported_providers") or []
+    last_results = diagnostics.get("results") or {}
+
+    diag_rows = []
+    for prov in supported:
+        result = last_results.get(prov) or {}
+        ok = result.get("ok")
+        configured = result.get("configured", True)
+        latency_ms = result.get("latency_ms")
+        err = result.get("error")
+        sample = result.get("response_sample")
+        checked_at = result.get("checked_at")
+
+        if not result:
+            badge = '<span class="muted">not tested yet</span>'
+            detail_text = ""
+        elif ok:
+            badge = ('<span style="background:#3fb950;color:#0d1117;'
+                     'padding:2px 8px;border-radius:10px;font-size:10px;'
+                     'font-weight:700;">OK</span>')
+            bits = []
+            if latency_ms is not None:
+                bits.append(f"{latency_ms} ms")
+            if sample:
+                bits.append(_h(str(sample)[:100]))
+            detail_text = " · ".join(bits)
+        elif not configured:
+            badge = ('<span style="background:#8b949e;color:#0d1117;'
+                     'padding:2px 8px;border-radius:10px;font-size:10px;'
+                     'font-weight:700;">UNCONFIGURED</span>')
+            detail_text = _h(str(err or "")[:200])
+        else:
+            badge = ('<span style="background:#f85149;color:#0d1117;'
+                     'padding:2px 8px;border-radius:10px;font-size:10px;'
+                     'font-weight:700;">FAIL</span>')
+            bits = []
+            if latency_ms is not None and latency_ms > 0:
+                bits.append(f"{latency_ms} ms")
+            if err:
+                bits.append(_h(str(err)[:200]))
+            detail_text = " · ".join(bits)
+
+        ts_text = (
+            f'<span class="muted" style="font-size:11px;">@ {_h(checked_at)}</span>'
+            if checked_at else ""
+        )
+
+        diag_rows.append(
+            f'<tr>'
+            f'<td><code>{_h(prov)}</code></td>'
+            f'<td>{badge}</td>'
+            f'<td class="muted" style="font-size:12px;max-width:480px;">'
+            f'{detail_text}'
+            f'{ts_text}'
+            f'</td>'
+            f'<td>'
+            f'<form action="/dashboard/settings/diagnostics" method="post" '
+            f'style="margin:0;display:inline;">'
+            f'<input type="hidden" name="provider" value="{_h(prov)}">'
+            f'<button type="submit" style="background:#21262d;color:#58a6ff;'
+            f'border:1px solid #30363d;padding:4px 10px;border-radius:4px;'
+            f'font-size:11px;cursor:pointer;">Test</button>'
+            f'</form>'
+            f'</td>'
+            f'</tr>'
+        )
+
+    if diag_rows:
+        diagnostics_block = (
+            '<div class="section-card" style="overflow-x:auto;"><table>'
+            '<tr><th>Provider</th><th>Status</th><th>Detail</th><th></th></tr>'
+            + "".join(diag_rows) + "</table></div>"
+        )
+    else:
+        diagnostics_block = (
+            '<div class="empty">Diagnostics not wired (provider_diagnostics module unavailable).</div>'
+        )
+
     if current_primary == "auto" and not current_chain:
         routing_state = (
             '<p class="muted">No override active — ic-engine uses its '
@@ -1717,6 +1802,14 @@ on the target.</p>
     <button type="submit" style="background:#d29922;">Restore from snapshot</button>
   </form>
 </div>
+
+<h2>Provider diagnostics</h2>
+<p class="muted">Verify each configured provider answers a real
+request. Tests fire on demand only — no automatic background polling
+— so the rate-limited free-tier providers (NewsAPI 100/day,
+AlphaVantage 5/min, MarketAux 100/day) don't burn quota on every
+dashboard load.</p>
+{diagnostics_block}
 """
     return _shell("settings", body, title="Settings")
 
@@ -1843,6 +1936,8 @@ def attach_to(
     set_provider_routing=None,
     export_config=None,
     import_config=None,
+    diagnostics_check=None,
+    diagnostics_supported=None,
 ) -> None:
     """Mount all dashboard tab routes on the given FastAPI app.
 
@@ -1889,12 +1984,28 @@ def attach_to(
         Restores from a config-snapshot JSON (delegates to
         ``portfolio_import``). Surfaced as a multipart upload via
         POST /dashboard/settings/import_config.
+    diagnostics_check : optional async callable(provider_name: str) -> dict
+        Runs a single provider health check. Wired to the per-row
+        "Test" button on the Settings tab "Provider diagnostics"
+        table (v4.3.1). Tests fire on demand only — never auto-poll.
+    diagnostics_supported : optional callable -> list[str]
+        Returns the list of provider names with health-check support
+        (mirrors `provider_diagnostics.supported_providers()`).
+
+    Diagnostic results persist in an in-memory dict scoped to this
+    closure. Restarting the bridge clears the cache; the user can
+    re-run any check on demand.
     CSRF policy
         Mutating dashboard POSTs compare any Origin or Referer header against
         the request Host and reject mismatches with a 303 redirect. This keeps
         the no-session dashboard compatible with IC_DASHBOARD_BIND deployments
         while accepting same-origin browser submissions.
     """
+
+    # In-memory cache of last diagnostic-check result per provider.
+    # Scoped to this closure so a bridge restart clears it; persistence
+    # would mean cross-request results leaking on shared deployments.
+    _diagnostics_results: dict[str, dict] = {}
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def overview(message: str = "") -> HTMLResponse:
@@ -1989,6 +2100,16 @@ def attach_to(
                 routing = await _maybe_await(get_provider_routing()) or {}
             except Exception:
                 routing = {}
+        diagnostics: dict = {}
+        if diagnostics_supported is not None:
+            try:
+                supported = await _maybe_await(diagnostics_supported())
+                diagnostics = {
+                    "supported_providers": list(supported) if supported else [],
+                    "results": dict(_diagnostics_results),
+                }
+            except Exception:
+                diagnostics = {}
         return HTMLResponse(
             _settings_tab(
                 lambda: status,
@@ -1996,6 +2117,7 @@ def attach_to(
                 backups=backups,
                 templates=templates,
                 routing=routing,
+                diagnostics=diagnostics,
                 message=message,
             )
         )
@@ -2169,6 +2291,43 @@ def attach_to(
             saved_chain = result.get("fallback_chain", chain)
             chain_str = ",".join(saved_chain) if saved_chain else "(none)"
             msg = f"Routing saved — primary: {saved_primary}, chain: {chain_str}"
+        return RedirectResponse(
+            url=f"/dashboard/settings?message={quote(msg)}",
+            status_code=303,
+        )
+
+    @app.post("/dashboard/settings/diagnostics", include_in_schema=False)
+    async def settings_run_diagnostic(request: Request) -> RedirectResponse:
+        from urllib.parse import quote
+        if redirect := _csrf_redirect(request, "/dashboard/settings"):
+            return redirect
+        if diagnostics_check is None:
+            return RedirectResponse(
+                url=f"/dashboard/settings?message={quote('Diagnostics not wired')}",
+                status_code=303,
+            )
+        form = await request.form()
+        provider = (form.get("provider") or "").strip()
+        if not provider:
+            return RedirectResponse(
+                url="/dashboard/settings?message=Missing+provider",
+                status_code=303,
+            )
+        result = await _maybe_await(diagnostics_check(provider))
+        # Cache the result for the next GET render. Errors are still
+        # cached so the user sees what failed last.
+        if isinstance(result, dict):
+            _diagnostics_results[provider] = result
+            ok = result.get("ok")
+            if ok:
+                latency = result.get("latency_ms")
+                msg = f"{provider}: OK ({latency} ms)"
+            elif not result.get("configured", True):
+                msg = f"{provider}: unconfigured ({result.get('error')})"
+            else:
+                msg = f"{provider}: FAIL ({result.get('error')})"
+        else:
+            msg = f"{provider}: invalid diagnostic result"
         return RedirectResponse(
             url=f"/dashboard/settings?message={quote(msg)}",
             status_code=303,

@@ -9,6 +9,71 @@ Distribution-edge artifacts (`SKILL.md`, `compose.yml`, `install.yaml`,
 `agent-skills/**`) are MIT-0; substantive code (bridge, dashboard,
 Dockerfile, tests) is Apache 2.0.
 
+## [4.3.1] — 2026-05-08
+
+### Added
+
+- **Provider diagnostics in Settings tab.** New "Provider diagnostics"
+  section lets the user verify each price/news provider is actually
+  answering before trusting it for `portfolio_refresh` /
+  `regenerate`. Per-provider rows show:
+  - Status badge (`OK` green / `FAIL` red / `UNCONFIGURED` gray)
+  - Latency (ms) on success
+  - Response sample (e.g. "AAPL c (current)=184.32") proving real
+    data came back
+  - Last-checked timestamp
+  - "Test" button to re-run the check on demand
+
+  Eight providers covered: yfinance, frankfurter, treasury_fiscaldata
+  (no key required); finnhub, massive, alpha_vantage, newsapi,
+  marketaux (key from /data/keys.env). 5-second per-check timeout.
+  **Tests fire on demand only** — never auto-poll on dashboard
+  render — to protect the rate-limited free-tier providers
+  (NewsAPI 100/day, AlphaVantage 5/min, MarketAux 100/day).
+
+  Results cache in an in-memory dict scoped to the dashboard
+  closure. Bridge restart clears the cache; the user can re-run
+  any check on demand.
+
+- **New module `bridge/investorclaw_bridge/provider_diagnostics.py`**
+  with `check_provider(name)` + `supported_providers()`. Returns
+  `{provider, ok, configured, latency_ms, status_code, error,
+  response_sample, checked_at}` per check.
+
+### Security
+
+- **0600-mode enforcement on `/data/keys.env` reads.** The diagnostics
+  module reads the keys file via the canonical `key_resolver.load_keys_env`
+  which enforces `KeysFileTooPermissiveError` on world/group-readable
+  modes. Two pre-existing parallel parsers (`setup_api._read_existing_keys`
+  + `mcp/tools/keys._read_existing`) were also refactored to delegate
+  to the same canonical reader, so all key-loading paths in the bridge
+  now share the same defensive mode check.
+- **URL injection from key values.** All provider URLs that include an
+  API key now use `httpx`'s `params=` kwarg instead of f-string
+  interpolation. A key value containing `&`, `=`, `#`, or `?` no
+  longer breaks the URL or injects extra query params.
+- **Test coverage:** new `tests/test_keys.py` covers the permissive-
+  mode rejection path; `tests/test_provider_diagnostics.py` URL
+  assertions capture `url` and `params` separately so key material
+  never appears in stringified URLs in test fixtures.
+
+### Notes
+
+- v4.3.1 is bridge-only: `IC_ENGINE_REF` unchanged at
+  `11adc63c00e215c36aef9ffaf985555eb2f83bd6`. Engine source
+  identical to v4.1.38–v4.3.0.
+- Codex adversarial review iterated 3 rounds before APPROVE-with-
+  scope-creep — round 1 surfaced 1 HIGH (permission bypass) + 1
+  MEDIUM (URL injection) + test gaps; round 2 fixed all three;
+  round 3 caught 2 follow-up issues (consistent application of
+  the 0600 check + URL test cleanup), both fixed. Round 4
+  surfaced bypass paths in `_runtime.py`, `keys_backup.py`,
+  `responses.py` — these are pre-existing patterns outside v4.3.1
+  scope; filed as v4.3.2 hygiene followup.
+- 184 non-environmental tests passing (was 148 in v4.3.0; +36
+  new tests covering diagnostics + permissive-mode rejection).
+
 ## [4.3.0] — 2026-05-08
 
 ### Added
