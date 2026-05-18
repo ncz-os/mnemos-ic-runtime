@@ -692,13 +692,66 @@ def _scenarios_tab() -> str:
 
 def _bonds_tab() -> str:
     bonds = _load_json("bond_analysis.json")
+    summary_html = ""
     if _T:
-        body = "<h2>Fixed Income</h2>\n" + _section_or_empty(
-            _T._render_bond_summary(bonds),
-            "No bond data (your portfolio may have no bond holdings, or run <code>investorclaw bonds</code>).",
-        )
+        summary_html = _T._render_bond_summary(bonds)
+
+    individual = (bonds.get("data") or {}).get("individual_bonds") or []
+
+    if individual:
+        rows = []
+        for b in sorted(individual, key=lambda x: x.get("market_value", 0), reverse=True):
+            cusip     = _h(b.get("cusip") or b.get("symbol") or "—")
+            atype     = _h((b.get("asset_type") or "bond").replace("_", " ").title())
+            coupon    = f"{b['coupon_rate']:.2f}%" if b.get("coupon_rate") else "—"
+            ytm       = f"{b['ytm']:.2f}%" if b.get("ytm") else "—"
+            tey       = f"{b['tax_equivalent_yield']:.2f}%" if b.get("tax_equivalent_yield") else "—"
+            maturity  = _h(b.get("maturity_date") or "—")
+            yrs       = f"{b['years_to_maturity']:.1f}y" if b.get("years_to_maturity") else "—"
+            duration  = f"{b['modified_duration']:.2f}" if b.get("modified_duration") else "—"
+            mkt_val   = f"${b['market_value']:,.0f}" if b.get("market_value") else "—"
+            credit    = _h(b.get("credit_quality_estimate") or "—")
+            bucket    = _h(b.get("maturity_bucket") or "—")
+            rows.append(f"""<tr>
+              <td style="font-family:monospace;font-size:11px;">{cusip}</td>
+              <td>{atype}</td>
+              <td style="text-align:right">{mkt_val}</td>
+              <td style="text-align:right">{coupon}</td>
+              <td style="text-align:right">{ytm}</td>
+              <td style="text-align:right">{tey}</td>
+              <td style="text-align:right">{duration}</td>
+              <td style="text-align:right">{yrs}</td>
+              <td style="text-align:center">{maturity}</td>
+              <td style="text-align:center">{credit}</td>
+              <td style="text-align:center">{bucket}</td>
+            </tr>""")
+        bonds_table = f"""
+<h3 style="margin-top:28px">Individual Positions ({len(individual)})</h3>
+<div style="overflow-x:auto">
+<table style="width:100%;border-collapse:collapse;font-size:12px">
+  <thead><tr style="background:#1f6feb;color:#fff">
+    <th style="text-align:left;padding:6px 8px">CUSIP</th>
+    <th style="text-align:left;padding:6px 8px">Type</th>
+    <th style="text-align:right;padding:6px 8px">Mkt Value</th>
+    <th style="text-align:right;padding:6px 8px">Coupon</th>
+    <th style="text-align:right;padding:6px 8px">YTM</th>
+    <th style="text-align:right;padding:6px 8px">TEY</th>
+    <th style="text-align:right;padding:6px 8px">Mod Dur</th>
+    <th style="text-align:right;padding:6px 8px">Yrs</th>
+    <th style="text-align:center;padding:6px 8px">Maturity</th>
+    <th style="text-align:center;padding:6px 8px">Credit</th>
+    <th style="text-align:center;padding:6px 8px">Bucket</th>
+  </tr></thead>
+  <tbody>{''.join(rows)}</tbody>
+</table>
+</div>"""
     else:
-        body = "<h2>Fixed Income</h2>\n" + _section_or_empty("", "Engine helpers unavailable.")
+        bonds_table = ""
+
+    body = "<h2>Fixed Income</h2>\n" + _section_or_empty(
+        summary_html + bonds_table,
+        "No bond data (your portfolio may have no bond holdings, or run <code>investorclaw bonds</code>).",
+    )
     return _shell("bonds", body, title="Bonds")
 
 

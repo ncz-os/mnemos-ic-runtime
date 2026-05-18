@@ -9,6 +9,18 @@ Distribution-edge artifacts (`SKILL.md`, `compose.yml`, `install.yaml`,
 `agent-skills/**`) are MIT-0; substantive code (bridge, dashboard,
 Dockerfile, tests) is Apache 2.0.
 
+## [4.4.2] — 2026-05-18
+
+### Added
+
+- **Individual bonds table in the dashboard Bonds tab.** The Fixed Income
+  tab now renders all bond positions as a sortable table (sorted by market
+  value descending) alongside the existing portfolio summary. Columns:
+  CUSIP, Type, Market Value, Coupon Rate, YTM, Tax-Equivalent Yield,
+  Modified Duration, Years to Maturity, Maturity Date, Credit Quality,
+  Maturity Bucket. Requires `investorclaw bonds` to have been run with
+  `FRED_API_KEY` set to get full YTM/TEY/duration data.
+
 ## [4.4.1] — 2026-05-18
 
 ### Added
