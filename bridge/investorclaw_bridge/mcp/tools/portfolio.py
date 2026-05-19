@@ -31,11 +31,15 @@ async def portfolio_ask(question: str) -> dict[str, Any]:
     deterministic pipeline, returns the structured ic_result envelope
     plus narrative text body.
 
-    The engine refreshes stale sections (news TTL=30s) opportunistically; the
-    cookie-cache-clear in `_runtime._clear_yfinance_cache` (commit 50387b1)
-    breaks the rate-limit cascade that previously made multi-prompt sessions
-    hang. Earlier `--no-refresh` here suppressed routing entirely (engine
-    fell through to the catalog blurb), so it is intentionally NOT passed.
+    ``--no-refresh`` is passed so the engine uses the cached envelope and
+    only runs the narrator — it does not trigger a per-question news/data
+    pipeline run (TTL=30s for news). Without this flag, each ask spawns a
+    yfinance + LLM refresh subprocess that accumulates into zombie processes
+    when the narrative provider is slow or unavailable. Explicit data
+    freshness is handled by ``portfolio_refresh`` / the Regenerate button.
+    The old note warning that ``--no-refresh`` suppressed routing is no
+    longer valid — current ic-engine routes correctly from the cached
+    envelope.
 
     Each successful response is auto-persisted to MNEMOS (best-effort) so
     the user can search history, retrieve by serial number (run_id), flag
@@ -43,7 +47,7 @@ async def portfolio_ask(question: str) -> dict[str, Any]:
     persisted mem_id is attached to the response under `mnemos_mem_id`
     when storage succeeds.
     """
-    result = await _run_ic_engine(["ask", question])
+    result = await _run_ic_engine(["ask", "--no-refresh", question])
     # Best-effort MNEMOS persistence; never raises, never blocks the response.
     try:
         from .responses import persist_response
