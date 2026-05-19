@@ -9,6 +9,19 @@ Distribution-edge artifacts (`SKILL.md`, `compose.yml`, `install.yaml`,
 `agent-skills/**`) are MIT-0; substantive code (bridge, dashboard,
 Dockerfile, tests) is Apache 2.0.
 
+## [4.4.4] — 2026-05-19
+
+### Fixed
+
+- **Dashboard tabs (Optimize, Cashflow, Peer, Markets, Synthesize) showing
+  no data.** Root cause: `investorclaw optimize|cashflow|peer|markets|synthesize`
+  commands return JSON to stdout but do not self-write report files under
+  `/data/reports/` in the pinned engine version (11adc63c). The bridge now
+  persists the stdout JSON to the expected filenames after each section run:
+  `optimize.json`, `rebalance.json`, `cashflow.json`, `peer.json`,
+  `markets.json`, `portfolio_analysis.json`. Dashboard tabs populate on the
+  next regenerate sweep after this bridge update.
+
 ## [4.4.3] — 2026-05-19
 
 ### Fixed

@@ -106,6 +106,50 @@ async def _regenerate_sweep(
     if run_ic_engine is None:
         from .mcp._runtime import _run_ic_engine as run_ic_engine
 
+    # Map section command → expected report filename under /data/reports/.
+    # Sections that already write their own file are omitted; entries here
+    # cause the bridge to write the stdout envelope when the engine doesn't.
+    _SECTION_REPORT_FILES: dict[str, str] = {
+        "optimize":  "optimize.json",
+        "rebalance": "rebalance.json",
+        "cashflow":  "cashflow.json",
+        "peer":      "peer.json",
+        "markets":   "markets.json",
+        "synthesize": "portfolio_analysis.json",
+    }
+
+    import json as _json
+    import pathlib as _pathlib
+
+    _reports_dir = _pathlib.Path(os.environ.get("IC_REPORTS_DIR", "/data/reports"))
+
+    def _persist_section(sec: str, result: dict[str, Any]) -> None:
+        """Write the engine stdout to the expected report file if missing."""
+        fname = _SECTION_REPORT_FILES.get(sec)
+        if not fname:
+            return
+        dest = _reports_dir / fname
+        stdout = result.get("stdout", "")
+        if not stdout:
+            return
+        # Extract the first valid JSON object from stdout (may contain log lines).
+        for line in stdout.splitlines():
+            line = line.strip()
+            if line.startswith("{") and '"ic_result"' not in line:
+                try:
+                    data = _json.loads(line)
+                    _reports_dir.mkdir(parents=True, exist_ok=True)
+                    dest.write_text(_json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                    return
+                except Exception:
+                    pass
+        # Fallback: write full stdout as a JSON string if no structured object found.
+        try:
+            _reports_dir.mkdir(parents=True, exist_ok=True)
+            dest.write_text(_json.dumps({"raw": stdout}), encoding="utf-8")
+        except Exception:
+            pass
+
     async def _run() -> dict[str, Any]:
         results: dict[str, Any] = {}
         # Setup is fast and idempotent — re-discovers any newly uploaded files.
@@ -113,6 +157,7 @@ async def _regenerate_sweep(
         # The big refresh — pulls fresh prices for every position.
         results["refresh"] = await run_ic_engine(["refresh"], timeout_sec=1800.0)
         # Per-section analyzers. Each writes its own JSON under /data/reports/.
+        # Bridge persists stdout for sections that don't self-write.
         sections = [
             "performance", "bonds", "analyst", "news", "whatchanged",
             "scenario", "optimize", "rebalance", "cashflow", "peer",
@@ -120,7 +165,9 @@ async def _regenerate_sweep(
         ]
         for sec in sections:
             try:
-                results[sec] = await run_ic_engine([sec], timeout_sec=900.0)
+                result = await run_ic_engine([sec], timeout_sec=900.0)
+                results[sec] = result
+                _persist_section(sec, result)
             except Exception as e:  # noqa: BLE001
                 results[sec] = {"error": f"{type(e).__name__}: {e}"}
         return results
