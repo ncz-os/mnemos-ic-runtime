@@ -132,7 +132,35 @@ async def _regenerate_sweep(
         stdout = result.get("stdout", "")
         if not stdout:
             return
-        # Extract the first valid JSON object from stdout (may contain log lines).
+
+        # 1. Try to parse full stdout as JSON (handles multi-line JSON like optimize.py output)
+        stdout_stripped = stdout.strip()
+        # Find first { ... } block by locating the JSON object before any ic_result trailer
+        for boundary_kw in ['{"ic_result"', "ic_result"]:
+            if boundary_kw in stdout_stripped:
+                candidate = stdout_stripped[:stdout_stripped.rfind(boundary_kw)].rstrip()
+                if candidate.endswith(","):
+                    candidate = candidate[:-1].rstrip()
+                try:
+                    data = _json.loads(candidate)
+                    if isinstance(data, dict) and "ic_result" not in data:
+                        _reports_dir.mkdir(parents=True, exist_ok=True)
+                        dest.write_text(_json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                        return
+                except Exception:
+                    pass
+
+        # 2. Try parsing whole stdout as JSON (no ic_result present)
+        try:
+            data = _json.loads(stdout_stripped)
+            if isinstance(data, dict) and "ic_result" not in data:
+                _reports_dir.mkdir(parents=True, exist_ok=True)
+                dest.write_text(_json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                return
+        except Exception:
+            pass
+
+        # 3. Extract the first valid single-line JSON object from stdout (legacy format).
         for line in stdout.splitlines():
             line = line.strip()
             if line.startswith("{") and '"ic_result"' not in line:
@@ -143,7 +171,7 @@ async def _regenerate_sweep(
                     return
                 except Exception:
                     pass
-        # Fallback: write full stdout as a JSON string if no structured object found.
+        # Fallback: write full stdout as a JSON string.
         try:
             _reports_dir.mkdir(parents=True, exist_ok=True)
             dest.write_text(_json.dumps({"raw": stdout}), encoding="utf-8")
