@@ -147,7 +147,35 @@ body {{
   background: #0d1117; color: #c9d1d9;
 }}
 @media (prefers-color-scheme: light) {{
-  body {{ background: #fafbfc; color: #24292f; }}
+  body {{ background: #ffffff; color: #24292f; }}
+  header {{ background: #f6f8fa; border-bottom-color: #d0d7de; }}
+  header h1 {{ color: #1f2328; }}
+  header .meta {{ color: #57606a; }}
+  nav {{ background: #f6f8fa; border-bottom-color: #d0d7de; }}
+  .tab {{ color: #57606a; }}
+  .tab:hover {{ color: #24292f; }}
+  h2, h3 {{ color: #1f2328; }}
+  .muted {{ color: #57606a; }}
+  code {{ background: #eaeef2; color: #24292f; }}
+  li {{ border-bottom-color: #d0d7de; }}
+  .kpi {{ background: #f6f8fa; border-color: #d0d7de; }}
+  .kpi-label {{ color: #57606a; }}
+  .kpi-value {{ color: #1f2328; }}
+  .empty {{ background: #f6f8fa; border-color: #d0d7de; color: #57606a; }}
+  .section-card {{ background: #f6f8fa; border-color: #d0d7de; }}
+  th {{ background: #eaeef2; color: #1f2328; }}
+  td {{ border-bottom-color: #d0d7de; }}
+  form input[type="text"], form input[type="password"], form select, form input[type="file"] {{
+    background: #ffffff; border-color: #d0d7de; color: #24292f;
+  }}
+  .alert-critical {{ background: #ffebe9; border-color: #ff8182; }}
+  .alert-high {{ background: #fff8c5; border-color: #d4a72c; }}
+  .alert-medium {{ background: #fff8c5; border-color: #d4a72c; }}
+  .alert-low {{ background: #f6f8fa; border-color: #d0d7de; }}
+  .alert-info {{ background: #ddf4ff; border-color: #54aeff; }}
+  .question {{ background: #f6f8fa; border-color: #d0d7de; }}
+  .question-title {{ color: #1f2328; }}
+  tr:nth-child(even) td {{ background: #f6f8fa; }}
 }}
 header {{
   background: #161b22; border-bottom: 1px solid #30363d;
@@ -1078,10 +1106,35 @@ def _cashflow_tab() -> str:
         return _shell("cashflow", "\n".join(parts), title="Cashflow")
 
     data = cf.get("data") or cf
+    # ic-engine cashflow.py outputs: annual_total, monthly_cashflow, yield_on_cost
+    annual = (
+        data.get("annual_total")
+        or data.get("total_year") or data.get("year_total") or data.get("annual_income")
+    )
+    monthly_cf = data.get("monthly_cashflow") or data.get("schedule") or []
+    # Derive quarter total and split from monthly breakdown if available
     total_q = data.get("total_quarter") or data.get("quarter_total") or data.get("next_quarter_income")
-    total_y = data.get("total_year") or data.get("year_total") or data.get("annual_income")
+    if total_q is None and monthly_cf:
+        try:
+            total_q = sum(float(m.get("total_income") or 0) for m in monthly_cf[:3])
+        except Exception:
+            total_q = None
+    total_y = annual
     div = data.get("dividends_total") or data.get("dividend_income")
     coup = data.get("coupons_total") or data.get("coupon_income")
+    if div is None and monthly_cf:
+        try:
+            div = sum(float(m.get("dividend_income") or 0) for m in monthly_cf)
+        except Exception:
+            div = None
+    if coup is None and monthly_cf:
+        try:
+            coup = sum(float(m.get("coupon_income") or 0) for m in monthly_cf)
+        except Exception:
+            coup = None
+
+    yoc = data.get("yield_on_cost")
+    yoc_str = f"{float(yoc)*100:.2f}% yield on cost" if yoc else ""
 
     def _money(v):
         try:
@@ -1095,27 +1148,50 @@ def _cashflow_tab() -> str:
   <div class="kpi"><div class="kpi-label">Dividends (annual)</div><div class="kpi-value">{_money(div)}</div></div>
   <div class="kpi"><div class="kpi-label">Coupons (annual)</div><div class="kpi-value">{_money(coup)}</div></div>
 </div>""")
+    if yoc_str:
+        parts.append(f'<p class="muted">{yoc_str}</p>')
 
-    rows_in = data.get("by_symbol") or data.get("schedule") or data.get("payments") or []
-    if rows_in:
+    # Monthly cashflow table (ic-engine format: month, total_income, dividend_income, coupon_income)
+    if monthly_cf:
         rows = []
-        for item in rows_in[:300]:
+        for item in monthly_cf[:24]:
+            month = _h(str(item.get("month", ""))[:7])
+            tot = item.get("total_income") or item.get("amount") or item.get("payment")
+            div_m = item.get("dividend_income")
+            coup_m = item.get("coupon_income")
+            rows.append(
+                f'<tr><td>{month}</td>'
+                f'<td style="text-align:right;">{_money(tot)}</td>'
+                f'<td style="text-align:right;">{_money(div_m)}</td>'
+                f'<td style="text-align:right;">{_money(coup_m)}</td></tr>'
+            )
+        parts.append(
+            '<h3>Monthly schedule</h3>'
+            '<div class="section-card"><table>'
+            '<tr><th>Month</th><th style="text-align:right;">Total</th>'
+            '<th style="text-align:right;">Dividends</th>'
+            '<th style="text-align:right;">Coupons</th></tr>'
+            + "".join(rows) + '</table></div>'
+        )
+
+    # Calendar events (individual payments)
+    events = data.get("calendar_events") or data.get("by_symbol") or data.get("payments") or []
+    if events:
+        rows = []
+        for item in events[:50]:
             sym = _h(str(item.get("symbol", "")))
             kind = _h(str(item.get("type") or item.get("kind") or ""))
             pay_date = _h(str(item.get("date") or item.get("ex_date") or item.get("pay_date") or "")[:10])
             amt = item.get("amount") or item.get("payment")
-            yld = item.get("yield") or item.get("dividend_yield")
             rows.append(
                 f'<tr><td><code>{sym}</code></td><td>{kind}</td>'
-                f'<td>{pay_date}</td><td style="text-align:right;">{_money(amt)}</td>'
-                f'<td style="text-align:right;">{(f"{float(yld)*100:.2f}%" if yld is not None else "—")}</td></tr>'
+                f'<td>{pay_date}</td><td style="text-align:right;">{_money(amt)}</td></tr>'
             )
         parts.append(
-            '<h3>Schedule</h3>'
+            '<h3>Upcoming payments (next 50)</h3>'
             '<div class="section-card"><table>'
             '<tr><th>Symbol</th><th>Type</th><th>Date</th>'
-            '<th style="text-align:right;">Amount</th>'
-            '<th style="text-align:right;">Yield</th></tr>'
+            '<th style="text-align:right;">Amount</th></tr>'
             + "".join(rows) + '</table></div>'
         )
     return _shell("cashflow", "\n".join(parts), title="Cashflow")
@@ -1134,29 +1210,98 @@ def _peer_tab() -> str:
         return _shell("peer", "\n".join(parts), title="Peer")
 
     data = peer.get("data") or peer
+
+    def _n(v, decimals=3):
+        if v is None:
+            return "—"
+        try:
+            return f"{float(v):.{decimals}f}"
+        except Exception:
+            return "—"
+
+    def _pct(v):
+        if v is None:
+            return "—"
+        try:
+            f = float(v)
+            return f"{f*100:.1f}%"
+        except Exception:
+            return "—"
+
+    # ic-engine peer.py outputs: benchmark, beta_matrix, active_share, style_scores,
+    # factor_tilts, overweight_sectors, underweight_sectors, holdings_analyzed
+    bm = data.get("benchmark", "SPY")
+    beta_matrix = data.get("beta_matrix") or {}
+    active_share = data.get("active_share")
+    style_scores = data.get("style_scores") or {}
+    factor_tilts = data.get("factor_tilts") or {}
+    over = data.get("overweight_sectors") or []
+    under = data.get("underweight_sectors") or []
+
+    # KPI grid — beta vs benchmarks + active share
+    kpis = []
+    for k, v in beta_matrix.items():
+        label = k.replace("vs_", "β vs ").upper()
+        kpis.append(f'<div class="kpi"><div class="kpi-label">{_h(label)}</div><div class="kpi-value">{_n(v, 2)}</div></div>')
+    if active_share is not None:
+        kpis.append(f'<div class="kpi"><div class="kpi-label">Active share</div><div class="kpi-value">{_pct(active_share)}</div></div>')
+    if kpis:
+        parts.append(f'<h3>Portfolio vs {_h(bm)}</h3><div class="kpi-grid">{"".join(kpis)}</div>')
+
+    # Factor tilts table
+    if factor_tilts:
+        rows = []
+        for factor, info in factor_tilts.items():
+            if not isinstance(info, dict):
+                continue
+            port_v = info.get("portfolio")
+            bench_v = info.get("spy") or info.get("benchmark")
+            tilt = _h(str(info.get("tilt", "")))
+            port_fmt = "Infinity" if port_v == float("inf") else _n(port_v, 2)
+            rows.append(
+                f'<tr><td>{_h(factor.replace("_", " ").title())}</td>'
+                f'<td style="text-align:right;">{port_fmt}</td>'
+                f'<td style="text-align:right;">{_n(bench_v, 2)}</td>'
+                f'<td><span style="color:#58a6ff">{tilt}</span></td></tr>'
+            )
+        if rows:
+            parts.append(
+                '<h3>Factor tilts vs benchmark</h3>'
+                '<div class="section-card"><table>'
+                '<tr><th>Factor</th><th style="text-align:right;">Portfolio</th>'
+                '<th style="text-align:right;">Benchmark</th><th>Tilt</th></tr>'
+                + "".join(rows) + '</table></div>'
+            )
+
+    # Style scores
+    if style_scores:
+        kpis = []
+        for k, v in style_scores.items():
+            label = k.replace("_vs_", " vs ").replace("_", " ").title()
+            kpis.append(f'<div class="kpi"><div class="kpi-label">{_h(label)}</div><div class="kpi-value">{_n(v, 2)}</div></div>')
+        parts.append(f'<h3>Style scores</h3><div class="kpi-grid">{"".join(kpis)}</div>')
+
+    # Overweight / underweight sectors
+    def _sector_block(title, items):
+        if not items:
+            return ""
+        rows = []
+        for s in items[:10]:
+            sec = _h(str(s.get("sector", "")))
+            delta = s.get("delta")
+            rows.append(f'<tr><td>{sec}</td><td style="text-align:right;">{_pct(delta)}</td></tr>')
+        return (
+            f'<h3>{title}</h3>'
+            '<div class="section-card"><table>'
+            '<tr><th>Sector</th><th style="text-align:right;">Δ vs benchmark</th></tr>'
+            + "".join(rows) + '</table></div>'
+        )
+
+    parts.append(_sector_block("Overweight sectors", over))
+    parts.append(_sector_block("Underweight sectors", under))
+
+    # Legacy format: explicit benchmarks list
     benchmarks = data.get("benchmarks") or data.get("comparison") or []
-    portfolio_metrics = data.get("portfolio_metrics") or data.get("portfolio") or {}
-
-    if portfolio_metrics:
-        def _fmt(v, kind="pct"):
-            if v is None:
-                return "—"
-            try:
-                if kind == "pct":
-                    f = float(v)
-                    return f"{f*100:+.2f}%" if abs(f) <= 1 else f"{f:+.2f}%"
-                return f"{float(v):.3f}"
-            except Exception:
-                return "—"
-
-        parts.append(f"""<h3>Your portfolio</h3>
-<div class="kpi-grid">
-  <div class="kpi"><div class="kpi-label">Total return</div><div class="kpi-value">{_fmt(portfolio_metrics.get('total_return'))}</div></div>
-  <div class="kpi"><div class="kpi-label">Annualized</div><div class="kpi-value">{_fmt(portfolio_metrics.get('annualized_return'))}</div></div>
-  <div class="kpi"><div class="kpi-label">Sharpe</div><div class="kpi-value">{_fmt(portfolio_metrics.get('sharpe'),'num')}</div></div>
-  <div class="kpi"><div class="kpi-label">Max drawdown</div><div class="kpi-value">{_fmt(portfolio_metrics.get('max_drawdown'))}</div></div>
-</div>""")
-
     if benchmarks:
         rows = []
         for b in benchmarks:
@@ -1174,14 +1319,6 @@ def _peer_tab() -> str:
                 try:
                     f = float(v)
                     return f"{f*100:+.2f}%" if abs(f) <= 1 else f"{f:+.2f}%"
-                except Exception:
-                    return "—"
-
-            def _n(v):
-                if v is None:
-                    return "—"
-                try:
-                    return f"{float(v):.3f}"
                 except Exception:
                     return "—"
 
