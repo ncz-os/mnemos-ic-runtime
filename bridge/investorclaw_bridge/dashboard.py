@@ -859,13 +859,23 @@ def _analyst_tab() -> str:
     # Summary KPIs
     if a:
         cov = a.get("analyst_coverage") or a.get("summary") or {}
+        # total_symbols lives in summary sub-dict, not in analyst_coverage
+        summary_d = a.get("summary") or {}
         try:
-            total = int(cov.get("total_symbols") or a.get("total_symbols") or 0)
+            total = int(
+                summary_d.get("total_symbols")
+                or cov.get("total_symbols")
+                or a.get("total_symbols")
+                or 0
+            )
         except Exception:
             total = 0
         strong = int(cov.get("strong_coverage", 0) or 0)
         moderate = int(cov.get("moderate_coverage", 0) or 0)
         none_c = int(cov.get("no_coverage", 0) or 0)
+        # Use actual count if total still 0
+        if total == 0 and recs and isinstance(recs, dict):
+            total = len(recs)
         total_d = total or 1
         parts.append(f"""<h3>Analyst Coverage</h3><div class="section-card">
 <div class="kpi-grid">
