@@ -1528,7 +1528,8 @@ def _markets_tab() -> str:
                     return "—"
                 try:
                     f = float(v)
-                    return f"{f*100:+.2f}%" if abs(f) <= 1 else f"{f:+.2f}%"
+                    # Values stored as percentage (e.g. 1.5 = +1.5%)
+                    return f"{f:+.2f}%"
                 except Exception:
                     return "—"
 
