@@ -853,14 +853,91 @@ def _bonds_tab() -> str:
 
 def _analyst_tab() -> str:
     a = _load_json("analyst_recommendations_summary.json")
-    if _T:
-        body = "<h2>Analyst Coverage</h2>\n" + _section_or_empty(
-            _T._render_analyst_summary(a),
-            "No analyst data. Run <code>investorclaw analyst</code>.",
+    ad = _load_json("analyst_data.json")
+    parts = ["<h2>Analyst Coverage</h2>"]
+
+    # Summary KPIs
+    if a:
+        cov = a.get("analyst_coverage") or a.get("summary") or {}
+        total = cov.get("total_symbols") or a.get("total_symbols") or "—"
+        strong = cov.get("strong_coverage", 0)
+        moderate = cov.get("moderate_coverage", 0)
+        light = cov.get("light_coverage", 0)
+        none_c = cov.get("no_coverage", 0)
+        parts.append(f"""<h3>Analyst Coverage</h3><div class="section-card">
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-label">Symbols analyzed</div><div class="kpi-value">{_h(str(total))}</div></div>
+  <div class="kpi"><div class="kpi-label">Strong coverage</div><div class="kpi-value kpi-positive">{strong} ({int(strong*100//(total or 1))}%)</div></div>
+  <div class="kpi"><div class="kpi-label">Moderate coverage</div><div class="kpi-value">{moderate} ({int(moderate*100//(total or 1))}%)</div></div>
+  <div class="kpi"><div class="kpi-label">No coverage</div><div class="kpi-value kpi-negative">{none_c}</div></div>
+</div></div>""")
+
+    # Per-stock analyst detail from analyst_data.json
+    recs = ad.get("recommendations") if ad else None
+    if recs and isinstance(recs, dict):
+        # Filter to meaningful entries (has analyst_count > 0)
+        entries = [v for v in recs.values() if isinstance(v, dict) and (v.get("analyst_count") or 0) > 0]
+
+        # Sort: Strong Buy first, then Buy, Hold, Sell; within tier by upside desc
+        tier_order = {"strong buy": 0, "buy": 1, "hold": 2, "underperform": 3, "sell": 4}
+        def _upside(r):
+            curr = r.get("current_price") or 0
+            tgt = r.get("target_price_mean") or 0
+            return (tgt - curr) / curr * 100 if curr > 0 else 0
+
+        entries.sort(key=lambda r: (
+            tier_order.get((r.get("consensus") or "").lower(), 5),
+            -_upside(r)
+        ))
+
+        def _consensus_color(c):
+            c = (c or "").lower()
+            if "strong buy" in c: return "#3fb950"
+            if "buy" in c: return "#58a6ff"
+            if "hold" in c: return "#d29922"
+            return "#f85149"
+
+        rows = []
+        for r in entries[:100]:  # top 100
+            sym = _h(r.get("symbol", ""))
+            consensus = _h(r.get("consensus") or "—")
+            n = r.get("analyst_count", 0)
+            buys = r.get("buy_count", 0)
+            holds = r.get("hold_count", 0)
+            sells = r.get("sell_count", 0)
+            curr = r.get("current_price") or 0
+            tgt = r.get("target_price_mean") or 0
+            upside = _upside(r)
+            upside_cls = "kpi-positive" if upside > 0 else ("kpi-negative" if upside < 0 else "")
+            yf_url = f"https://finance.yahoo.com/quote/{sym}/analysis/"
+            rows.append(
+                f'<tr>'
+                f'<td><a href="{yf_url}" target="_blank" style="color:#58a6ff"><code>{sym}</code></a></td>'
+                f'<td style="color:{_consensus_color(consensus)};font-weight:600">{consensus}</td>'
+                f'<td style="text-align:center">{n}</td>'
+                f'<td style="text-align:center;color:#3fb950">{buys}</td>'
+                f'<td style="text-align:center;color:#d29922">{holds}</td>'
+                f'<td style="text-align:center;color:#f85149">{sells}</td>'
+                f'<td style="text-align:right">${curr:,.2f}</td>'
+                f'<td style="text-align:right">${tgt:,.2f}</td>'
+                f'<td style="text-align:right" class="{upside_cls}">{upside:+.1f}%</td>'
+                f'</tr>'
+            )
+
+        parts.append(
+            f'<h3>Analyst Recommendations ({len(entries)} covered)</h3>'
+            '<p class="muted">Sorted by consensus tier then upside potential. Click symbol for Yahoo Finance analyst detail.</p>'
+            '<div class="section-card"><div style="overflow-x:auto"><table>'
+            '<tr><th>Symbol</th><th>Consensus</th><th style="text-align:center">Analysts</th>'
+            '<th style="text-align:center">Buy</th><th style="text-align:center">Hold</th>'
+            '<th style="text-align:center">Sell</th><th style="text-align:right">Price</th>'
+            '<th style="text-align:right">Target</th><th style="text-align:right">Upside</th></tr>'
+            + "".join(rows) + '</table></div></div>'
         )
-    else:
-        body = "<h2>Analyst</h2>\n" + _section_or_empty("", "Engine helpers unavailable.")
-    return _shell("analyst", body, title="Analyst")
+    elif not a:
+        parts.append('<div class="empty">No analyst data. Run <code>investorclaw analyst</code>.</div>')
+
+    return _shell("analyst", "\n".join(parts), title="Analyst")
 
 
 def _news_tab() -> str:
