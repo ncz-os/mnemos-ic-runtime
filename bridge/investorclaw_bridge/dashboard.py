@@ -859,16 +859,19 @@ def _analyst_tab() -> str:
     # Summary KPIs
     if a:
         cov = a.get("analyst_coverage") or a.get("summary") or {}
-        total = cov.get("total_symbols") or a.get("total_symbols") or "—"
-        strong = cov.get("strong_coverage", 0)
-        moderate = cov.get("moderate_coverage", 0)
-        light = cov.get("light_coverage", 0)
-        none_c = cov.get("no_coverage", 0)
+        try:
+            total = int(cov.get("total_symbols") or a.get("total_symbols") or 0)
+        except Exception:
+            total = 0
+        strong = int(cov.get("strong_coverage", 0) or 0)
+        moderate = int(cov.get("moderate_coverage", 0) or 0)
+        none_c = int(cov.get("no_coverage", 0) or 0)
+        total_d = total or 1
         parts.append(f"""<h3>Analyst Coverage</h3><div class="section-card">
 <div class="kpi-grid">
-  <div class="kpi"><div class="kpi-label">Symbols analyzed</div><div class="kpi-value">{_h(str(total))}</div></div>
-  <div class="kpi"><div class="kpi-label">Strong coverage</div><div class="kpi-value kpi-positive">{strong} ({int(strong*100//(total or 1))}%)</div></div>
-  <div class="kpi"><div class="kpi-label">Moderate coverage</div><div class="kpi-value">{moderate} ({int(moderate*100//(total or 1))}%)</div></div>
+  <div class="kpi"><div class="kpi-label">Symbols analyzed</div><div class="kpi-value">{total}</div></div>
+  <div class="kpi"><div class="kpi-label">Strong coverage</div><div class="kpi-value kpi-positive">{strong} ({strong*100//total_d}%)</div></div>
+  <div class="kpi"><div class="kpi-label">Moderate coverage</div><div class="kpi-value">{moderate} ({moderate*100//total_d}%)</div></div>
   <div class="kpi"><div class="kpi-label">No coverage</div><div class="kpi-value kpi-negative">{none_c}</div></div>
 </div></div>""")
 
