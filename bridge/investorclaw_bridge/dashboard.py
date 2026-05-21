@@ -23,7 +23,9 @@ Tabs:
 """
 from __future__ import annotations
 
+import csv as _csv
 import datetime as _dt
+import functools
 import glob as _glob
 import json as _json
 import os
@@ -91,6 +93,45 @@ def _try_engine_helpers():
 
 
 _T = _try_engine_helpers()
+
+
+@functools.lru_cache(maxsize=1)
+def _load_cusip_names() -> dict:
+    """Build CUSIP → cleaned bond name from uploaded portfolio CSVs."""
+    result: dict = {}
+    try:
+        data_dir = pathlib.Path(REPORTS_DIR).parent  # /data
+        for csv_path in _glob.glob(str(data_dir / "portfolios" / "*.csv")):
+            try:
+                with open(csv_path) as fh:
+                    lines = fh.readlines()
+                if len(lines) < 2:
+                    continue
+                reader = _csv.DictReader(lines[1:])
+                for row in reader:
+                    sym = row.get("SYMBOL", "").strip()
+                    cusip = row.get("CUSIP", "").strip()
+                    desc = row.get("DESCRIPTION", "").strip()
+                    if sym == "N/A" and len(cusip) == 9 and cusip not in ("N/A", ""):
+                        # Strip UBS "BE/R/ RATE x% MATURES date" suffix
+                        clean = re.sub(r"\s+BE[/]R[/].*", "", desc)
+                        clean = re.sub(r"\s+MATURES.*", "", clean)
+                        clean = re.sub(r"\s*\([0-9A-Z]{9}\).*", "", clean)
+                        clean = clean.strip().title()
+                        # Fix common state/abbreviation casing
+                        for abbr in ("SC","TX","GA","IL","CA","CO","WA","NY","NJ","FL","PA","OH","MI","NC","VA","AZ","OR","WI","MN","NV","MD","MA"):
+                            clean = re.sub(rf"\b{abbr.title()}\b", abbr, clean)
+                        result[cusip] = clean
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return result
+
+
+def _cusip_to_name(cusip: str) -> str:
+    """Return human-readable bond name for a CUSIP, or empty string."""
+    return _load_cusip_names().get(cusip, "")
 
 
 def _load_json(filename: str) -> Dict[str, Any]:
@@ -732,6 +773,12 @@ def _bonds_tab() -> str:
     if individual:
         rows = []
         def _bond_name(b):
+            cusip = b.get("cusip") or b.get("symbol") or ""
+            # Try exact name from uploaded portfolio CSV first
+            csv_name = _cusip_to_name(cusip)
+            if csv_name:
+                return csv_name
+            # Fallback: construct from type + coupon + maturity
             atype = str(b.get("asset_type", "")).lower()
             coupon = b.get("coupon_rate", 0) or 0
             mat = str(b.get("maturity_date", ""))[:7]
