@@ -731,9 +731,29 @@ def _bonds_tab() -> str:
 
     if individual:
         rows = []
+        def _bond_name(b):
+            atype = str(b.get("asset_type", "")).lower()
+            coupon = b.get("coupon_rate", 0) or 0
+            mat = str(b.get("maturity_date", ""))[:7]
+            try:
+                months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+                yr = mat[2:4]; mn = int(mat[5:7])
+                mat_str = f"{months[mn-1]} '{yr}"
+            except Exception:
+                mat_str = mat
+            if atype == "treasury":
+                return f"US {'T-Bill' if coupon == 0 else 'Treasury'} {coupon:.2f}% {mat_str}"
+            elif "municipal" in atype:
+                return f"Muni Bond {coupon:.2f}% {mat_str}"
+            elif "corporate" in atype:
+                return f"Corp Bond {coupon:.2f}% {mat_str}"
+            elif "agency" in atype:
+                return f"Agency {coupon:.2f}% {mat_str}"
+            return f"{atype.replace('_',' ').title()} {coupon:.2f}% {mat_str}"
+
         for b in sorted(individual, key=lambda x: x.get("market_value", 0), reverse=True):
             cusip     = _h(b.get("cusip") or b.get("symbol") or "—")
-            atype     = _h((b.get("asset_type") or "bond").replace("_", " ").title())
+            bname     = _h(_bond_name(b))
             coupon    = f"{b['coupon_rate']:.2f}%" if b.get("coupon_rate") else "—"
             ytm       = f"{b['ytm']:.2f}%" if b.get("ytm") else "—"
             tey       = f"{b['tax_equivalent_yield']:.2f}%" if b.get("tax_equivalent_yield") else "—"
@@ -744,8 +764,7 @@ def _bonds_tab() -> str:
             credit    = _h(b.get("credit_quality_estimate") or "—")
             bucket    = _h(b.get("maturity_bucket") or "—")
             rows.append(f"""<tr>
-              <td style="font-family:monospace;font-size:11px;">{cusip}</td>
-              <td>{atype}</td>
+              <td>{bname}<br><span style="font-family:monospace;font-size:10px;opacity:0.6">{cusip}</span></td>
               <td style="text-align:right">{mkt_val}</td>
               <td style="text-align:right">{coupon}</td>
               <td style="text-align:right">{ytm}</td>
@@ -761,8 +780,7 @@ def _bonds_tab() -> str:
 <div style="overflow-x:auto">
 <table style="width:100%;border-collapse:collapse;font-size:12px">
   <thead><tr style="background:#1f6feb;color:#fff">
-    <th style="text-align:left;padding:6px 8px">CUSIP</th>
-    <th style="text-align:left;padding:6px 8px">Type</th>
+    <th style="text-align:left;padding:6px 8px">Bond</th>
     <th style="text-align:right;padding:6px 8px">Mkt Value</th>
     <th style="text-align:right;padding:6px 8px">Coupon</th>
     <th style="text-align:right;padding:6px 8px">YTM</th>
