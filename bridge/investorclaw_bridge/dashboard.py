@@ -731,11 +731,86 @@ def _performance_tab() -> str:
     perf = _load_json("performance.json")
     if not perf:
         body = '<h2>Performance</h2><div class="empty">No performance data. Run <code>investorclaw performance</code> in the container.</div>'
-    elif _T:
-        body = "<h2>Performance</h2>\n" + _T._render_performance_summary(perf)
-    else:
-        body = "<h2>Performance</h2>\n" + _section_or_empty("", "Engine helpers unavailable.")
-    return _shell("performance", body, title="Performance")
+        return _shell("performance", body, title="Performance")
+
+    parts = ["<h2>Performance</h2>"]
+    data = perf.get("data") or perf
+    ps = data.get("portfolio_summary") or {}
+    period = (data.get("period") or {})
+
+    # Summary KPI card
+    def _pct(v):
+        if v is None: return "—"
+        try: return f"{float(v)*100:+.2f}%" if abs(float(v)) <= 1 else f"{float(v):+.2f}%"
+        except: return "—"
+    def _n(v, d=3):
+        if v is None: return "—"
+        try: return f"{float(v):.{d}f}"
+        except: return "—"
+
+    vo = ps.get("weighted_volatility"); sh = ps.get("weighted_sharpe")
+    so = ps.get("weighted_sortino"); md = ps.get("weighted_max_drawdown")
+    ar = ps.get("weighted_annual_return"); be = ps.get("weighted_beta_to_market")
+    period_start = (period.get("start") or data.get("period",{}).get("start","?"))[:10] if isinstance(data.get("period"),dict) else "?"
+    analyzed = data.get("holdings_analyzed","?")
+    parts.append(f"""<h3>Performance Metrics</h3><div class="section-card">
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-label">Period start</div><div class="kpi-value" style="font-size:15px">{_h(str(period_start))}</div></div>
+  <div class="kpi"><div class="kpi-label">Symbols analyzed</div><div class="kpi-value">{analyzed}/{analyzed}</div></div>
+  <div class="kpi"><div class="kpi-label">Portfolio volatility</div><div class="kpi-value {'kpi-negative' if vo and float(vo)>0.35 else ''}">{_pct(vo)} ann.</div></div>
+  <div class="kpi"><div class="kpi-label">Portfolio Sharpe</div><div class="kpi-value">{_n(sh,2)}</div></div>
+  <div class="kpi"><div class="kpi-label">Sortino ratio</div><div class="kpi-value">{_n(so,2)}</div></div>
+  <div class="kpi"><div class="kpi-label">Max drawdown</div><div class="kpi-value kpi-negative">{_pct(md)}</div></div>
+  <div class="kpi"><div class="kpi-label">Beta vs market</div><div class="kpi-value">{_n(be,2)}</div></div>
+  <div class="kpi"><div class="kpi-label">Ann. return</div><div class="kpi-value">{_pct(ar)}</div></div>
+</div></div>""")
+
+    # Per-symbol volatility + risk table
+    perf_syms = data.get("performance") or {}
+    if perf_syms:
+        rows_vol = []
+        for sym, v in perf_syms.items():
+            if not isinstance(v, dict): continue
+            vol_d = v.get("volatility") or {}
+            if not vol_d.get("_valid"): continue
+            ann_vol = vol_d.get("annualized_volatility") or 0
+            sha = v.get("sharpe_ratio")
+            sha_val = (sha.get("sharpe_ratio") if isinstance(sha, dict) else sha)
+            beta_d = v.get("beta") or {}
+            beta_val = beta_d.get("beta") if isinstance(beta_d, dict) else beta_d
+            rows_vol.append((sym, ann_vol, sha_val, beta_val))
+
+        # Sort by volatility descending — highest risk positions first
+        rows_vol.sort(key=lambda x: x[1] or 0, reverse=True)
+
+        def _vol_color(v):
+            if v is None: return ""
+            f = float(v)
+            if f > 0.8: return "color:#f85149;"
+            if f > 0.5: return "color:#d29922;"
+            return "color:#3fb950;"
+
+        rows_html = []
+        for sym, vol, sha, beta in rows_vol[:50]:
+            vc = _vol_color(vol)
+            rows_html.append(
+                f'<tr><td><code>{_h(sym)}</code></td>'
+                f'<td style="text-align:right;{vc}">{_pct(vol)}</td>'
+                f'<td style="text-align:right">{_n(sha,2) if sha is not None else "—"}</td>'
+                f'<td style="text-align:right">{_n(beta,2) if beta is not None else "—"}</td>'
+                f'</tr>'
+            )
+        if rows_html:
+            parts.append(
+                f'<h3>Per-Position Risk (top 50 by volatility, {len(rows_vol)} total)</h3>'
+                '<p class="muted">Sorted by annualized volatility. Red = high volatility (&gt;80% ann.).</p>'
+                '<div class="section-card"><div style="overflow-x:auto"><table>'
+                '<tr><th>Symbol</th><th style="text-align:right">Volatility</th>'
+                '<th style="text-align:right">Sharpe</th><th style="text-align:right">Beta</th></tr>'
+                + "".join(rows_html) + '</table></div></div>'
+            )
+
+    return _shell("performance", "\n".join(parts), title="Performance")
 
 
 def _whatchanged_tab() -> str:
