@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-# InvestorClaw 4.1.22 ic-engine container — bridge image for the v4.1.18 application service
+# InvestorClaw 4.4.6 ic-engine container — bridge image for the v4.1.18 application service
 #
-# Builds: mnemos-os/ic-engine:4.1.22-cpu
+# Builds: mnemos-os/ic-engine:4.4.6-cpu
 # Pairs with: mnemos-os/mnemos-rs:4.2 (over compose bridge network)
 #
 # What's in this container:
@@ -25,14 +25,14 @@ FROM python:3.12-slim AS builder
 # Default fills in at build time; production builds should pin explicitly.
 # Repo migrated from perlowja/InvestorClaw → argonautsystems/ic-engine
 # (org migration completed in v2.5.1; commit 729dd5d on master).
-# Pinned to ic-engine@c8cf343 — v4.4.5 carries:
+# Pinned to ic-engine@2d902d3 — v4.4.6 carries:
 #   - optimize.py: OPT-01 equity pre-filter (top 30) + OPT-03 zero-price
 #     symbol filter before DiscreteAllocation; argv preprocess fix
 #   - All prior fixes through v4.1.38 narrator + runaway hardening
 # Bump this SHA + the version label below for each ic-engine source bump
 # so the build is deterministic; CI multi-arch buildx rebuilds both
 # arches against the pinned commit.
-ARG IC_ENGINE_REF=c8cf3433a55bcd7b0ee0957a8fe992fac732b5af
+ARG IC_ENGINE_REF=2d902d3dd78b0132b05068d652e9ab3307fb619f
 ARG IC_ENGINE_REPO=https://gitlab.com/argonautsystems/ic-engine.git
 
 # uv install (canonical Python toolchain per project policy)
@@ -299,7 +299,7 @@ ENV IC_DASHBOARD_BIND=0.0.0.0:8092
 # so the bridge can self-report its image version (the OCI label below
 # isn't readable from inside the container without docker socket access).
 # Bump this AND the LABEL line at the bottom of the file together.
-ENV IC_ENGINE_VERSION=4.4.5
+ENV IC_ENGINE_VERSION=4.4.6
 
 # ic-engine reads its own canonical env-var names (INVESTOR_CLAW_*).
 # Set them to the same values so subprocess'd analyzers honor /data/.
@@ -366,4 +366,4 @@ LABEL org.opencontainers.image.description="Portfolio analysis service exposing 
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.source="https://github.com/ncz-os/mnemos-ic-runtime"
 LABEL org.opencontainers.image.documentation="https://investorclaw.app"
-LABEL org.opencontainers.image.version="4.4.5"
+LABEL org.opencontainers.image.version="4.4.6"
