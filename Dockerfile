@@ -32,7 +32,7 @@ FROM python:3.12-slim AS builder
 # Bump this SHA + the version label below for each ic-engine source bump
 # so the build is deterministic; CI multi-arch buildx rebuilds both
 # arches against the pinned commit.
-ARG IC_ENGINE_REF=c8cf34356adac7b7a0fce0fb7d0edd0d5cfa9b14
+ARG IC_ENGINE_REF=c8cf3433a55bcd7b0ee0957a8fe992fac732b5af
 ARG IC_ENGINE_REPO=https://gitlab.com/argonautsystems/ic-engine.git
 
 # uv install (canonical Python toolchain per project policy)
