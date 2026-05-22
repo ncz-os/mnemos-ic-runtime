@@ -1583,6 +1583,29 @@ def _markets_tab() -> str:
     def _block(title: str, items: list) -> str:
         if not items:
             return ""
+
+        def _money(v):
+            if v is None:
+                return "—"
+            try:
+                return f"${float(v):,.2f}"
+            except (ValueError, TypeError):
+                return "—"
+
+        def _chg_pct(v):
+            """Format change_pct stored as percentage points (1.5 = +1.5%).
+            Guard: if |v| > 15 the data is stale/invalid — show '—' to avoid
+            misleading +60% intraday figures."""
+            if v is None:
+                return "—"
+            try:
+                f = float(v)
+                if abs(f) > 15:
+                    return "—"
+                return f"{f:+.2f}%"
+            except (ValueError, TypeError):
+                return "—"
+
         rows = []
         for it in items:
             sym = _h(str(it.get("symbol") or it.get("ticker") or it.get("name") or ""))
@@ -1590,34 +1613,17 @@ def _markets_tab() -> str:
             price = it.get("price") or it.get("last")
             chg = it.get("change_pct") or it.get("pct_change") or it.get("change_percent")
 
-            def _money(v):
-                if v is None:
-                    return "—"
-                try:
-                    return f"${float(v):,.2f}"
-                except Exception:
-                    return "—"
-
-            def _pct(v):
-                if v is None:
-                    return "—"
-                try:
-                    f = float(v)
-                    # Values stored as percentage (e.g. 1.5 = +1.5%)
-                    return f"{f:+.2f}%"
-                except Exception:
-                    return "—"
-
             color = ""
             try:
                 f = float(chg or 0)
-                color = "color:#3fb950;" if f > 0 else ("color:#f85149;" if f < 0 else "")
-            except Exception:
+                if abs(f) <= 15:
+                    color = "color:#3fb950;" if f > 0 else ("color:#f85149;" if f < 0 else "")
+            except (ValueError, TypeError):
                 pass
             rows.append(
                 f'<tr><td><code>{sym}</code></td><td>{name}</td>'
                 f'<td style="text-align:right;">{_money(price)}</td>'
-                f'<td style="text-align:right;{color}">{_pct(chg)}</td></tr>'
+                f'<td style="text-align:right;{color}">{_chg_pct(chg)}</td></tr>'
             )
         return (
             f'<h3>{title}</h3>'
