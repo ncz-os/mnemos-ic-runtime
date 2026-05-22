@@ -781,7 +781,7 @@ def _performance_tab() -> str:
             rows_vol.append((sym, ann_vol, sha_val, beta_val))
 
         # Sort by volatility descending — highest risk positions first
-        rows_vol.sort(key=lambda x: x[1] or 0, reverse=True)
+        rows_vol.sort(key=lambda x: x[1] if x[1] is not None else 0, reverse=True)
 
         def _vol_color(v):
             if v is None: return ""
