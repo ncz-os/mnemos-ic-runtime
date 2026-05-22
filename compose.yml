@@ -61,8 +61,9 @@ services:
       # Engine works without these (degraded — stub narratives), but with
       # an LLM key it produces real natural-language answers.
       INVESTORCLAW_NARRATIVE_PROVIDER: openai_compat
-      INVESTORCLAW_NARRATIVE_ENDPOINT: https://api.together.xyz/v1
-      INVESTORCLAW_NARRATIVE_MODEL: google/gemma-4-31B-it
+      INVESTORCLAW_NARRATIVE_ENDPOINT: https://integrate.api.nvidia.com/v1
+      INVESTORCLAW_NARRATIVE_MODEL: moonshotai/kimi-k2.6
+      INVESTORCLAW_NARRATIVE_API_KEY: REDACTED_NVAPI_KEY
       # MNEMOS persistence for portfolio_ask responses. Override for your
       # deployment — typical values: http://mnemos:5002 (compose-internal),
       # http://localhost:5002 (host-side), or your own MNEMOS endpoint URL.
