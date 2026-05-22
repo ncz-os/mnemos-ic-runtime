@@ -63,7 +63,7 @@ services:
       INVESTORCLAW_NARRATIVE_PROVIDER: openai_compat
       INVESTORCLAW_NARRATIVE_ENDPOINT: https://integrate.api.nvidia.com/v1
       INVESTORCLAW_NARRATIVE_MODEL: moonshotai/kimi-k2.6
-      INVESTORCLAW_NARRATIVE_API_KEY: REDACTED_NVAPI_KEY
+      INVESTORCLAW_NARRATIVE_API_KEY: "${NVIDIA_API_KEY}"
       # MNEMOS persistence for portfolio_ask responses. Override for your
       # deployment — typical values: http://mnemos:5002 (compose-internal),
       # http://localhost:5002 (host-side), or your own MNEMOS endpoint URL.
