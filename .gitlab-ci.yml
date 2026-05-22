@@ -65,7 +65,7 @@ build:amd64:
     - |
       docker buildx build \
         --platform linux/amd64 \
-        --build-arg GITLAB_TOKEN="${CI_JOB_TOKEN}" \
+        --build-arg GITLAB_TOKEN="${GITLAB_READ_PAT}" \
         --tag $REGISTRY/$IMAGE_NAME:${VERSION}-cpu-amd64 \
         --provenance=false \
         --push \
@@ -80,7 +80,7 @@ build:arm64:
     - |
       docker buildx build \
         --platform linux/arm64 \
-        --build-arg GITLAB_TOKEN="${CI_JOB_TOKEN}" \
+        --build-arg GITLAB_TOKEN="${GITLAB_READ_PAT}" \
         --tag $REGISTRY/$IMAGE_NAME:${VERSION}-cpu-arm64 \
         --provenance=false \
         --push \
