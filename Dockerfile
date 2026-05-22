@@ -47,14 +47,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # treat shell-pipe installers as untrusted-source.
 RUN python3 -m pip install --no-cache-dir --break-system-packages uv && uv --version
 
+# GitLab token for fetching private dependencies (clio, etc.)
+# Passed as --build-arg GITLAB_TOKEN=$CI_JOB_TOKEN in CI or any PAT with read_repository.
+ARG GITLAB_TOKEN=""
+
 # Clone ic-engine source at the pinned ref
 WORKDIR /build
 RUN git clone --depth 1 --branch ${IC_ENGINE_REF} ${IC_ENGINE_REPO} /build/ic-engine \
  || git clone ${IC_ENGINE_REPO} /build/ic-engine && cd /build/ic-engine && git checkout ${IC_ENGINE_REF}
 
 # uv sync — produces a self-contained venv at /build/.venv
+# Configure git to use the CI token for private GitLab dependencies (e.g. clio).
 WORKDIR /build/ic-engine
-RUN UV_PROJECT_ENVIRONMENT=/build/.venv uv sync --python 3.12 --frozen \
+RUN if [ -n "${GITLAB_TOKEN}" ]; then \
+      git config --global url."https://gitlab-ci-token:${GITLAB_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"; \
+    fi && \
+    UV_PROJECT_ENVIRONMENT=/build/.venv uv sync --python 3.12 --frozen \
  || UV_PROJECT_ENVIRONMENT=/build/.venv uv sync --python 3.12
 
 # uv sync installs the local project (`investorclaw`) editable by default,
