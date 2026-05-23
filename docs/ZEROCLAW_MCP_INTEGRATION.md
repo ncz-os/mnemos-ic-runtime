@@ -121,25 +121,47 @@ baseline at 29/30).
 
 ## 5. ZeroClaw qwen3-32b barrage results
 
-*In progress as of document creation — results appended when complete.*
+**Status: MCP connectivity confirmed; full barrage blocked by tool routing issue**
 
-**Methodology:**
-- 30 prompts from `harness/cobol/nlq-prompts.json` (same set as REST baseline)
-- N=3 trials per prompt
-- Pass criteria: `parsed_tool_calls >= 1 AND final_text present AND not deflection`
-- Agent: `barrage_qwen3` (`qwen/qwen3-32b` via Groq)
-- Per-call timeout: 120s (qwen3 tool call + synthesis ~60-90s warm)
+### What was confirmed
 
-**Timing profile (measured):**
-- MCP connect + tools/list: ~40ms
-- First LLM call (qwen3 → tool selection): ~1.2-2s
-- ic-engine tool execution: ~10-45s (yfinance + engine pipeline)
-- Second LLM call (synthesis): ~2-5s
-- Total per call: ~60-90s warm, up to 120s cold
+- MCP session establishment: ✅ (`MCP server investorclaw connected — 13 tool(s) available`)
+- qwen3-32b tool selection: ✅ (`tool_call_start` logged on every prompt)
+- ic-engine responds to tool calls: ✅ (200 OK on /mcp POST)
+- End-to-end example: "top 5 holdings" completed in ~75s returning real portfolio data
 
-| Prompt ID | Status | Notes |
+### Blocker: qwen3 prefers `portfolio_holdings` over `portfolio_ask`
+
+For natural-language questions, qwen3-32b routes to `investorclaw__portfolio_holdings`
+instead of `investorclaw__portfolio_ask`. This is semantically reasonable ("What is in my
+portfolio?" → holdings tool) but has a severe performance consequence on large portfolios:
+
+| Tool | Implementation | Duration (215 positions) |
 |---|---|---|
-| *results pending* | | |
+| `portfolio_ask` | Uses cached sweep data; calls `investorclaw ask` | **7s** |
+| `portfolio_holdings` | Live yfinance fetch for ALL positions | **180s+ (timeout)** |
+
+Three mitigation attempts all failed:
+1. System prompt "use portfolio_ask" — qwen3 ignores it
+2. `allowed_tools = ["investorclaw__portfolio_ask"]` — only blocks built-in tools, not MCP tools
+3. `max_tool_iterations = 1` — observed 3 iterations; does not restrict MCP tool loops
+
+### Additional findings
+
+- `max_tool_iterations` in `[runtime_profiles.default]` does not cap MCP tool call iterations
+  as expected; zeroclaw made 3 tool calls despite `max_tool_iterations = 1`
+- `risk_profile.allowed_tools` restricts zeroclaw built-in tools (bash, filesystem) but has
+  no effect on MCP tools from external servers
+
+### Recommendation
+
+For cobol barrage with zeroclaw 0.8.0 + qwen3 + ic-engine:
+1. Use a pre-seeded portfolio with ≤20 positions (yfinance fetch is per-position)
+2. OR configure `investorclaw__portfolio_holdings` as disabled/aliased at ic-engine MCP level
+3. OR use the REST endpoint directly for barrage scoring (established 25/30 baseline)
+
+The MCP integration is **verified working** for tool routing. The barrage blocker is
+specific to large-portfolio + portfolio_holdings performance, not to MCP connectivity.
 
 ---
 
@@ -160,6 +182,19 @@ to call a `tool_search` meta-tool to activate them. Most models ignore this.
 Results in hallucination instead of tool calls with no error.
 **Proposed fix:** Default `deferred_loading = false` OR add a startup log
 "MCP deferred: LLM must call tool_search to activate tools (13 stubs loaded)".
+
+### Issue 4: `allowed_tools` in risk_profile does not restrict MCP tools
+**Severity:** Medium
+**Impact:** Users expect `allowed_tools = ["mcp_server__tool_name"]` to restrict
+which MCP tools an agent can call. It only restricts built-in zeroclaw tools.
+**Proposed fix:** Apply `allowed_tools` filter to MCP tool calls in `tool_execution.rs`.
+
+### Issue 5: `max_tool_iterations` does not cap MCP tool call loops
+**Severity:** Medium
+**Impact:** Setting `max_tool_iterations = 1` in `[runtime_profiles.default]` does not
+prevent more than 1 MCP tool call iteration. Observed 3 consecutive tool calls.
+**Proposed fix:** Clarify if `max_tool_iterations` applies only to built-in tool loops.
+If MCP tools should also respect this limit, fix the loop exit condition.
 
 ### Issue 3: Llama 4 Scout `<tool_calls>` plural tag not parsed
 **Severity:** Low-Medium  
