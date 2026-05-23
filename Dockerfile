@@ -280,8 +280,14 @@ RUN find /opt/ic-engine/.venv/bin -type f -exec \
         sed -i '1s|^#!/build/.venv/bin/python.*|#!/opt/ic-engine/.venv/bin/python|' {} \; \
  && /opt/ic-engine/.venv/bin/python -c "import sys; print('venv ok:', sys.executable)"
 
-# /data is the canonical mount point for compose volume
-RUN mkdir -p /data/portfolios /data/reports && chown -R ic:ic /data
+# /data is the canonical mount point for compose volume.
+# chown here sets ownership in the IMAGE layer — applies when Docker
+# initializes a NEW named volume from the image (first-run population).
+# Pre-existing volumes retain their ownership; see compose.yml ic-data-init
+# service which runs as root to fix permissions on existing volumes.
+RUN mkdir -p /data/portfolios /data/reports /data/.ic-init \
+ && chown -R ic:ic /data \
+ && chmod 755 /data/portfolios /data/reports
 
 USER ic
 WORKDIR /opt/ic-engine
