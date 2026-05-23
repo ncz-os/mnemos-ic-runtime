@@ -165,7 +165,19 @@ specific to large-portfolio + portfolio_holdings performance, not to MCP connect
 
 ---
 
-## 6. ZeroClaw 0.8.0 issues to file upstream
+## 6. ZeroClaw 0.8.0 upstream issues filed
+
+All 5 issues filed against zeroclaw-labs/zeroclaw (verified against 0.8.0-beta-1 source):
+
+| # | GitHub | Description |
+|---|---|---|
+| 1 | [#6873](https://github.com/zeroclaw-labs/zeroclaw/issues/6873) | `mcp.enabled` defaults false |
+| 2 | [#6874](https://github.com/zeroclaw-labs/zeroclaw/issues/6874) | `deferred_loading` defaults true |
+| 3 | [#6875](https://github.com/zeroclaw-labs/zeroclaw/issues/6875) | `<tool_calls>` plural XML not parsed |
+| 4 | [#6876](https://github.com/zeroclaw-labs/zeroclaw/issues/6876) | `allowed_tools` doesn't restrict MCP tools |
+| 5 | [#6877](https://github.com/zeroclaw-labs/zeroclaw/issues/6877) | `max_tool_iterations` wrong config location |
+
+
 
 ### Issue 1: `mcp.enabled` defaults to false with no documentation
 **Severity:** Medium
