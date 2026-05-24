@@ -197,6 +197,14 @@ _EXPORT_SCHEMA = "ic-engine-export/v2"
 _ACCEPTED_SCHEMAS = frozenset({"ic-engine-export/v1", "ic-engine-export/v2"})
 _MAX_PORTFOLIO_BYTES = 5 * 1024 * 1024  # 5 MB per file — sanity cap
 
+# Mirrors setup_api.upload_portfolio + dashboard upload allowlist. Keeping
+# in sync with the upload allowlist is load-bearing — portfolio_export
+# previously globbed only *.csv, silently dropping Excel + PDF uploads
+# from any cross-host migration / snapshot even though the upload path
+# accepts all four suffixes.
+_PORTFOLIO_SUFFIXES = (".csv", ".xls", ".xlsx", ".pdf")
+_BINARY_PORTFOLIO_SUFFIXES = frozenset({".xls", ".xlsx", ".pdf"})
+
 
 async def portfolio_export() -> dict[str, Any]:
     """Return a JSON snapshot of the active /data state.
@@ -241,24 +249,42 @@ async def portfolio_export() -> dict[str, Any]:
 
     pdir = _portfolio_dir()
     if pdir.is_dir():
-        for csv_path in sorted(pdir.glob("*.csv")):
+        # Walk every supported suffix (was *.csv only — Excel + PDF
+        # uploads were silently dropped from snapshots). De-dup the
+        # candidate list so case-insensitive globs (.PDF on macOS-fs)
+        # don't double-emit the same file.
+        portfolio_files: list[Path] = []
+        seen_paths: set[Path] = set()
+        for suffix in _PORTFOLIO_SUFFIXES:
+            for path in pdir.glob(f"*{suffix}"):
+                if path in seen_paths:
+                    continue
+                seen_paths.add(path)
+                portfolio_files.append(path)
+        for portfolio_path in sorted(portfolio_files):
+            suffix = portfolio_path.suffix.lower()
             try:
-                stat = csv_path.stat()
+                stat = portfolio_path.stat()
                 if stat.st_size > _MAX_PORTFOLIO_BYTES:
                     snapshot["warnings"].append(
-                        f"Skipped {csv_path.name}: exceeds {_MAX_PORTFOLIO_BYTES} bytes."
+                        f"Skipped {portfolio_path.name}: exceeds {_MAX_PORTFOLIO_BYTES} bytes."
                     )
                     continue
-                raw = csv_path.read_bytes()
-                # Try utf-8; fall back to base64 with marker.
-                try:
-                    content_text = raw.decode("utf-8")
-                    encoding = "utf-8"
-                except UnicodeDecodeError:
+                raw = portfolio_path.read_bytes()
+                # Binary suffixes always base64-encode. Text suffixes try
+                # utf-8 first, fall back to base64 on decode failure.
+                if suffix in _BINARY_PORTFOLIO_SUFFIXES:
                     content_text = base64.b64encode(raw).decode("ascii")
                     encoding = "base64"
+                else:
+                    try:
+                        content_text = raw.decode("utf-8")
+                        encoding = "utf-8"
+                    except UnicodeDecodeError:
+                        content_text = base64.b64encode(raw).decode("ascii")
+                        encoding = "base64"
                 snapshot["portfolios"].append({
-                    "filename": csv_path.name,
+                    "filename": portfolio_path.name,
                     "encoding": encoding,
                     "content": content_text,
                     "modified_at": time.strftime(
@@ -268,7 +294,7 @@ async def portfolio_export() -> dict[str, Any]:
                 })
             except Exception as exc:
                 snapshot["warnings"].append(
-                    f"Failed to read {csv_path.name}: {type(exc).__name__}: {exc}"
+                    f"Failed to read {portfolio_path.name}: {type(exc).__name__}: {exc}"
                 )
 
     # Stonkmode persona state — small JSON file; embed verbatim if present.
@@ -366,6 +392,16 @@ async def portfolio_import(snapshot: dict[str, Any]) -> dict[str, Any]:
             safe = Path(filename).name
             if not safe or safe.startswith("."):
                 result["warnings"].append(f"Rejected filename `{filename}` (unsafe).")
+                continue
+            # Validate suffix against the same allowlist as the upload path
+            # so a malicious snapshot can't drop a .sh / .py / .env file
+            # into /data/portfolios.
+            suffix = Path(safe).suffix.lower()
+            if suffix not in _PORTFOLIO_SUFFIXES:
+                result["warnings"].append(
+                    f"Rejected `{filename}` (suffix {suffix!r} not in "
+                    f"{list(_PORTFOLIO_SUFFIXES)})."
+                )
                 continue
             target = pdir / safe
             if encoding == "base64":
