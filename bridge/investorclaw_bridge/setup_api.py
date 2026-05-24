@@ -341,6 +341,12 @@ async def save_keys_explicit(request: Request):
     return HTMLResponse(_render_form(banner=banner))
 
 
+# Match dashboard upload cap (50 MiB) so /setup/portfolio doesn't read
+# an unbounded multipart body into memory. A larger upload returns 413
+# and the partial file is unlinked.
+_MAX_PORTFOLIO_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
 @router.post("/portfolio", response_class=HTMLResponse)
 async def upload_portfolio(
     portfolio_file: UploadFile = File(...),
@@ -360,17 +366,43 @@ async def upload_portfolio(
     safe_name = Path(portfolio_file.filename).name
     dest = PORTFOLIO_DIR / safe_name
 
-    contents = await portfolio_file.read()
-    dest.write_bytes(contents)
+    # Stream in 1 MiB chunks and enforce _MAX_PORTFOLIO_UPLOAD_BYTES so a
+    # large local upload can't exhaust process RAM (was: await read() of
+    # the whole body into memory + write_bytes). On size violation or
+    # write failure the partial file is unlinked so /data doesn't keep
+    # half-written portfolio CSVs that would confuse the loader.
+    chunk_size = 1 << 20  # 1 MiB
+    total = 0
+    try:
+        with dest.open("wb") as fh:
+            while True:
+                chunk = await portfolio_file.read(chunk_size)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _MAX_PORTFOLIO_UPLOAD_BYTES:
+                    fh.close()
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(
+                        413,
+                        f"Upload too large: > {_MAX_PORTFOLIO_UPLOAD_BYTES // 1024 // 1024} MB cap",
+                    )
+                fh.write(chunk)
+    except HTTPException:
+        raise
+    except Exception:
+        # Any other write failure → delete partial file before bubbling up
+        dest.unlink(missing_ok=True)
+        raise
     dest.chmod(0o600)
 
     logger.info(
         "setup.portfolio_uploaded",
         path=str(dest),
-        size=len(contents),
+        size=total,
         original_name=portfolio_file.filename,
     )
-    banner = f"Uploaded: {safe_name} ({len(contents)} bytes)"
+    banner = f"Uploaded: {safe_name} ({total} bytes)"
     return HTMLResponse(_render_form(banner=banner))
 
 
