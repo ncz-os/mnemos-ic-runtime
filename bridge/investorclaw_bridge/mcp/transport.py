@@ -107,6 +107,57 @@ def register_tools(app: Any) -> None:
         """Flag a stored portfolio response as bad without deleting it."""
         return await TOOL_REGISTRY["portfolio_response_flag_bad"]["handler"](run_id, reason)
 
+    # ── Keys recommendation + encrypted backup/restore (ic-runtime audit
+    # graeae/ncz-os flagged these as advertised-but-unregistered: REST
+    # clients reached them but MCP clients couldn't discover or invoke
+    # them, even though the registry log claimed everything was wired.)
+
+    @app.tool()
+    async def portfolio_keys_recommend(portfolio_path: str = "") -> dict[str, Any]:
+        """Recommend which provider keys are most useful for this portfolio."""
+        # Treat empty string from MCP clients the same as None.
+        path_arg: Any = portfolio_path or None
+        return await TOOL_REGISTRY["portfolio_keys_recommend"]["handler"](path_arg)
+
+    @app.tool()
+    async def portfolio_keys_backup(passphrase: str, label: str = "") -> dict[str, Any]:
+        """Encrypted (scrypt + AES-256-GCM) backup of /data/keys.env."""
+        return await TOOL_REGISTRY["portfolio_keys_backup"]["handler"](passphrase, label)
+
+    @app.tool()
+    async def portfolio_keys_restore(passphrase: str, backup_path: str = "") -> dict[str, Any]:
+        """Decrypt a prior keys backup and replace /data/keys.env."""
+        return await TOOL_REGISTRY["portfolio_keys_restore"]["handler"](passphrase, backup_path)
+
+    @app.tool()
+    async def portfolio_keys_backups_list() -> dict[str, Any]:
+        """List stored encrypted key backups (paths, labels, timestamps)."""
+        return await TOOL_REGISTRY["portfolio_keys_backups_list"]["handler"]()
+
+    # ── Version-check + cross-host snapshot export/import (upgrade flow)
+
+    @app.tool()
+    async def portfolio_version_check(
+        registry: str = "", repository: str = ""
+    ) -> dict[str, Any]:
+        """Check the current ic-engine image version vs ghcr.io latest."""
+        kwargs = {}
+        if registry:
+            kwargs["registry"] = registry
+        if repository:
+            kwargs["repository"] = repository
+        return await TOOL_REGISTRY["portfolio_version_check"]["handler"](**kwargs)
+
+    @app.tool()
+    async def portfolio_export() -> dict[str, Any]:
+        """JSON snapshot of /data (portfolios + stonkmode + key NAMES only)."""
+        return await TOOL_REGISTRY["portfolio_export"]["handler"]()
+
+    @app.tool()
+    async def portfolio_import(snapshot: dict[str, Any]) -> dict[str, Any]:
+        """Restore a portfolio_export snapshot (validates schema before writing)."""
+        return await TOOL_REGISTRY["portfolio_import"]["handler"](snapshot)
+
     logger.info(
         "mcp.tools.registered",
         tools=list(TOOL_REGISTRY.keys()),
