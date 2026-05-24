@@ -23,7 +23,7 @@ import re
 from html import escape
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 import structlog
@@ -293,36 +293,51 @@ async def save_keys_form(**form_values: str):  # noqa: ARG002
     raise NotImplementedError  # pragma: no cover
 
 
-# Explicit form-handler with all known keys as optional Form params.
-# FastAPI prefers explicit Form() declarations; the **form_values pattern
-# above doesn't always parse correctly across versions.
+# Dynamic form-handler: read every field in the POST body, filter to
+# KNOWN_KEYS by name, and feed only the NON-EMPTY values into _save_keys.
+# Previous explicit-Form param list was hard-coded to six older keys, so:
+#   * MASSIVE_API_KEY + MARKETAUX_API_KEY (added later) were silently dropped
+#     even though the form rendered fields for them
+#   * blank fields were sent through to _save_keys, which interprets empty
+#     as "delete the key" — contradicting the form placeholder text that
+#     says "blank means keep current"
+# Dynamic dispatch + non-empty filter restores the documented behavior and
+# auto-tracks new KNOWN_KEYS entries without code changes.
+# To delete a key, use the explicit DELETE /setup/keys/{name} route below.
 
-async def save_keys_explicit(
-    TOGETHER_API_KEY: str = Form(""),
-    OPENAI_API_KEY: str = Form(""),
-    FINNHUB_KEY: str = Form(""),
-    FRED_API_KEY: str = Form(""),
-    NEWSAPI_KEY: str = Form(""),
-    ALPHA_VANTAGE_KEY: str = Form(""),
-):
-    updates = {
-        "TOGETHER_API_KEY": TOGETHER_API_KEY,
-        "OPENAI_API_KEY": OPENAI_API_KEY,
-        "FINNHUB_KEY": FINNHUB_KEY,
-        "FRED_API_KEY": FRED_API_KEY,
-        "NEWSAPI_KEY": NEWSAPI_KEY,
-        "ALPHA_VANTAGE_KEY": ALPHA_VANTAGE_KEY,
-    }
-    # Strip leading/trailing whitespace; empty values become "delete the key"
-    updates = {k: v.strip() for k, v in updates.items()}
-    saved = {k: v for k, v in updates.items() if v}
+_KNOWN_KEY_NAMES = {k["name"] for k in KNOWN_KEYS}
+
+
+async def save_keys_explicit(request: Request):
+    form = await request.form()
+    updates: dict[str, str] = {}
+    rejected: list[str] = []
+    for name, raw in form.items():
+        if name not in _KNOWN_KEY_NAMES:
+            rejected.append(name)
+            continue
+        value = (raw or "").strip() if isinstance(raw, str) else ""
+        # Only send NON-EMPTY values to _save_keys so blank fields preserve
+        # existing values (matches the UI placeholder + KEYS_FILE_NOTE
+        # rendered on the /setup page).
+        if value:
+            updates[name] = value
+    if rejected:
+        logger.info(
+            "setup.keys_form_unknown_fields",
+            unknown=sorted(rejected),
+            known=sorted(_KNOWN_KEY_NAMES),
+        )
     _save_keys(updates)
-    banner = (
-        f"Saved {len(saved)} key{'s' if len(saved) != 1 else ''}: "
-        f"{', '.join(sorted(saved.keys()))}"
-        if saved
-        else "No keys submitted (all fields blank — existing values preserved)."
-    )
+    if updates:
+        banner = (
+            f"Saved {len(updates)} key{'s' if len(updates) != 1 else ''}: "
+            f"{', '.join(sorted(updates.keys()))}. Blank fields preserved."
+        )
+    else:
+        banner = (
+            "No keys submitted (all fields blank — existing values preserved)."
+        )
     return HTMLResponse(_render_form(banner=banner))
 
 
