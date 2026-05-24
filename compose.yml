@@ -32,10 +32,35 @@ x-mcp-service-meta:
   supported_agents: ["any MCP client", "any HTTP/REST client"]
 
 services:
+  # One-shot init container — fixes /data + /data/portfolios ownership when
+  # the host bind-mount (./portfolios) was created root-owned by Docker.
+  # Without this, the main ic-engine container (running as uid=1000) hits
+  # PermissionError: [Errno 13] on /data/keys.env and cannot chmod
+  # /data/reports. This obviates the "--userns=keep-id:uid=1000,gid=1000"
+  # podman workaround documented in the v4.x deployment notes.
+  ic-data-init:
+    image: ghcr.io/argonautsystems/ic-engine:4.4.6-cpu@sha256:4f487512e0ee9c2c67476b48741c4d0417c92c12d606cf036b32fab2de3dafc9
+    container_name: ic-data-init
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mkdir -p /data/portfolios /data/reports /data/.ic-init &&
+        chown -R 1000:1000 /data &&
+        chmod 755 /data /data/portfolios /data/reports &&
+        echo "ic-data-init: /data ownership fixed for uid=1000"
+    volumes:
+      - ic-engine-data:/data
+      - ./portfolios:/data/portfolios
+    restart: "no"
+
   ic-engine:
     image: ghcr.io/argonautsystems/ic-engine:4.4.6-cpu@sha256:4f487512e0ee9c2c67476b48741c4d0417c92c12d606cf036b32fab2de3dafc9
     container_name: ic-engine
     restart: unless-stopped
+    depends_on:
+      ic-data-init:
+        condition: service_completed_successfully
 
     # MCP-HTTP at :18090/mcp + plain REST at :18090/api/portfolio/*
     # Dashboard + healthz at :18092

@@ -30,6 +30,30 @@ logger = structlog.get_logger("investorclaw_bridge.mcp")
 IC_ENGINE_BIN = os.environ.get(
     "IC_ENGINE_BIN", "/opt/ic-engine/.venv/bin/investorclaw"
 )
+
+
+def _current_ic_engine_bin() -> str:
+    """Resolve the ic-engine binary path at call time.
+
+    Tests + legacy callers patch ``investorclaw_bridge.mcp_server.IC_ENGINE_BIN``
+    (the public compatibility shim). The actual subprocess invocation lives
+    in this module, which historically read its own module-level
+    ``IC_ENGINE_BIN`` at module-import time — so monkey-patching the shim
+    had no effect on _run_ic_engine and tests fell back to whatever
+    ``investorclaw`` binary happened to be on PATH.
+
+    Prefer the shim-module binding when present (so existing tests that
+    patch ``investorclaw_bridge.mcp_server.IC_ENGINE_BIN`` keep working),
+    fall back to this module's IC_ENGINE_BIN otherwise. Lazy import
+    avoids the circular dependency.
+    """
+    try:
+        from investorclaw_bridge import mcp_server as _shim
+    except Exception:  # pragma: no cover - defensive
+        return IC_ENGINE_BIN
+    return getattr(_shim, "IC_ENGINE_BIN", IC_ENGINE_BIN)
+
+
 PORTFOLIO_DIR = Path(os.environ.get("IC_PORTFOLIO_DIR", "/data/portfolios"))
 REPORTS_DIR = Path(os.environ.get("IC_REPORTS_DIR", "/data/reports"))
 KEYS_FILE = Path(os.environ.get("IC_KEYS_FILE", "/data/keys.env"))
@@ -113,10 +137,11 @@ async def _run_ic_engine(
     The reap path SIGTERMs orphans on timeout/cancellation and clears the
     yfinance cache to break the cascade documented in YF_CACHE_DIR above.
     """
-    bin_path = IC_ENGINE_BIN if Path(IC_ENGINE_BIN).exists() else "investorclaw"
+    configured_bin = _current_ic_engine_bin()
+    bin_path = configured_bin if Path(configured_bin).exists() else "investorclaw"
     if not shutil.which(bin_path) and not Path(bin_path).exists():
         raise IcEngineError(
-            f"ic-engine binary not found at {IC_ENGINE_BIN!r} or on PATH. "
+            f"ic-engine binary not found at {configured_bin!r} or on PATH. "
             f"Container build must install it at /opt/ic-engine/.venv/bin/investorclaw."
         )
 
@@ -198,7 +223,8 @@ async def _run_ic_engine(
 
 def health_check() -> dict[str, Any]:
     """Basic liveness — surfaced at /healthz on both :8090 (MCP) and :8092 (dashboard)."""
-    bin_present = Path(IC_ENGINE_BIN).exists() or bool(shutil.which("investorclaw"))
+    configured_bin = _current_ic_engine_bin()
+    bin_present = Path(configured_bin).exists() or bool(shutil.which("investorclaw"))
     return {
         "status": "ok" if bin_present else "degraded",
         "ic_engine_bin_found": bin_present,

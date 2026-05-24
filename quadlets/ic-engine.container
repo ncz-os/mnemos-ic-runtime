@@ -38,17 +38,28 @@ Wants=network-online.target
 # AutoUpdate=registry intentionally OMITTED — same posture as the
 # zeroclaw/openclaw/hermes quadlets per the 3-agent-rootfs handoff.
 # Operators upgrade by deploying a new ncz revision, not by registry pull.
-Image=ghcr.io/argonautsystems/ic-engine:4.4.4-cpu@sha256:1d27ca406b1c7150b8019c7fd0c7b3cd32a086ca2e7fae490c7b1a8695e6d66a
+Image=ghcr.io/argonautsystems/ic-engine:4.4.6-cpu@sha256:4f487512e0ee9c2c67476b48741c4d0417c92c12d606cf036b32fab2de3dafc9
 ContainerName=ic-engine
 
 # Networking
 # MCP-HTTP at :18090 (agent-facing JSON-RPC + REST surface)
 # Dashboard at :18092 (human-facing browser UI)
-# Both bind 0.0.0.0 inside the container; PublishPort surfaces on the
-# host's loopback. For LAN access, override IC_HOST=0.0.0.0 via env file
-# (only behind nginx/Tailscale/Caddy with TLS termination).
-PublishPort=18090:8090
-PublishPort=18092:8092
+#
+# Both surfaces bind 0.0.0.0 INSIDE the container. PublishPort is
+# pinned to host loopback (127.0.0.1) here so an accidentally-
+# installed quadlet on a LAN-exposed host does NOT publish
+# unauthenticated MCP + REST + setup + upload + key-management +
+# reports + dashboard onto every host interface.
+#
+# Bare `PublishPort=18090:8090` would bind 0.0.0.0 by default in
+# podman/quadlet, which is exactly the exposure we want to avoid.
+#
+# For deliberate LAN/internet access: change 127.0.0.1 → 0.0.0.0 below
+# AND front the service with nginx / Tailscale / Caddy + TLS + auth.
+# Don't bypass without TLS + auth — the surfaces include API-key
+# management and portfolio upload.
+PublishPort=127.0.0.1:18090:8090
+PublishPort=127.0.0.1:18092:8092
 
 # Data volume — persistent state lives in /data/ inside the container:
 #   /data/portfolios/   — uploaded portfolio CSVs/XLS/PDFs
