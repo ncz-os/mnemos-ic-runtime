@@ -247,6 +247,13 @@ RUN set -exo pipefail; \
     echo "verifying ic-engine + heavy deps still importable..."; \
     /build/.venv/bin/python -c "import ic_engine; import polars; import pandas; import scipy; import numpy; import pyarrow; print('imports ok: ic_engine + polars + pandas + scipy + numpy + pyarrow')"
 
+# Strip the cloned repo's .git before it crosses into the runtime stage.
+# The clone URL embeds a GitLab PAT (IC_ENGINE_REPO / GITLAB_TOKEN) which git
+# persists into /build/ic-engine/.git/config; COPYing that into
+# /opt/ic-engine/source would bake the credential into the published image.
+# Runtime needs the source files, never the git metadata.
+RUN rm -rf /build/ic-engine/.git
+
 # ============================================================================
 # Stage 2: runtime — minimal image with venv + bridge + dashboard
 # ============================================================================
